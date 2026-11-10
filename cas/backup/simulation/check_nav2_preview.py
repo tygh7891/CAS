@@ -4,7 +4,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from lifecycle_msgs.srv import GetState
-from nav2_msgs.action import NavigateToPose, Spin
+from nav2_msgs.action import NavigateToPose, FollowPath, Spin
 from rclpy.action import ActionClient
 from tf2_ros import Buffer, TransformListener
 from rclpy.time import Time
@@ -28,7 +28,7 @@ def main():
                      'velocity_smoother', 'smoother_server']:
             client = node.create_client(GetState, f'/{robot}/{name}/get_state')
             clients.append((f'{robot}/{name}', client, None))
-        for kind, action_type in [('navigate_to_pose', NavigateToPose), ('spin', Spin)]:
+        for kind, action_type in [('navigate_to_pose', NavigateToPose), ('follow_path', FollowPath), ('spin', Spin)]:
             actions.append((f'{robot}/{kind}', ActionClient(node, action_type, f'/{robot}/{kind}')))
     # tf2's default subscriptions are remapped per node via wrapper CLI arguments.
     deadline = time.monotonic() + 20.0
