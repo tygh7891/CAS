@@ -129,3 +129,10 @@ PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B ~/CAS/cas/backup/simulation/test_z
 - 지도 아래 메타데이터·마스크·좌표 안내는 고정 높이로 묶고 남는 공간은 지도에 배분합니다.
 - SIM_NAV2의 W1/W2는 기존 후보가 아니라 실제 임무의 wait 좌표를 표시합니다.
 - operator 검사 27건 통과. 실제 수신 상태는 GUI/Nav2/Gazebo를 초기화한 후 사용자 터미널에서 확인해야 합니다.
+
+## 작업 경로 표시 조건
+
+미리 계산한 경로는 작업 요청 전에는 숨깁니다. 현재 세션 started 목록에 있고
+작업 상태가 RUNNING인 로봇의 경로만 표시하며, 완료/실패/취소 시 숨깁니다.
+지도·작업점·공유존·실제 위치 표시는 유지합니다. operator 검사 32건 통과.
+수신 정상과 별개로 Relay Blocked가 표시되면 아직 주행 준비 완료가 아닙니다.

@@ -9,6 +9,7 @@ import unittest
 from PyQt5.QtWidgets import QApplication
 from gui import Dashboard
 from service import AppService,create_http
+from map_view import visible_routes
 
 class GuiTests(unittest.TestCase):
     def test_operator_request_status_completion_and_disconnect(self):
@@ -96,6 +97,7 @@ class GuiTests(unittest.TestCase):
             pump_until(lambda:window.mask_toggle.y()-(window.map_metadata.y()+window.map_metadata.height())<=12
                        and window.point_info.y()-(window.mask_toggle.y()+window.mask_toggle.height())<=12)
             self.assertTrue(window.task_buttons['scenario'].isEnabled())
+            self.assertEqual(visible_routes(window.state),{})
             ready=copy.deepcopy(window.state)
             missing=copy.deepcopy(ready)
             missing.update(preflight_ready=False,commands_locked=True,
@@ -114,6 +116,7 @@ class GuiTests(unittest.TestCase):
             pump_until(lambda:service.snapshot()['active'])
             pump_until(lambda:window.state['zone']['owner']=='robot_2')
             self.assertIn('Gazebo',window.cards['robot_1'].text())
+            self.assertEqual(set(visible_routes(window.state)),{'robot_1','robot_2'})
             path=Path('/tmp/cas_b5_sim_nav2_gui.png');self.assertTrue(window.grab().save(str(path)))
         finally:
             window.timer.stop();window.close();app.processEvents()

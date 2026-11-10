@@ -5,6 +5,15 @@ from PyQt5.QtGui import QColor,QImage,QPainter,QPen
 from PyQt5.QtWidgets import QWidget
 from map_geometry import load_map
 
+def visible_routes(state):
+    """Show assigned in-progress jobs only; cached plans are not active routes."""
+    if not state or state.get('mode')!='SIM_NAV2':return {}
+    started=set(state.get('started',[]))
+    active={r['id'] for r in state.get('simulation',{}).get('robots',[])
+            if r.get('task_state')=='RUNNING' and r['id'] in started}
+    return {name:legs for name,legs in state.get('layout',{}).get('routes',{}).items() if name in active}
+
+
 class ReceivedMapView(QWidget):
     def __init__(self):
         super().__init__();self.setMinimumSize(380,300);self.spec=None;self.mask=None
@@ -65,7 +74,7 @@ class ReceivedMapView(QWidget):
             from PyQt5.QtGui import QPolygonF
             sim_mode=bool(self.state and self.state.get('mode')=='SIM_NAV2')
             if sim_mode:
-                routes=self.state.get('layout',{}).get('routes',{})
+                routes=visible_routes(self.state)
                 for name,legs in routes.items():
                     pen_color=QColor('#3b82f6' if name=='robot_1' else '#f59e0b')
                     pen_color.setAlpha(150)
