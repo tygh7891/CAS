@@ -1,14 +1,16 @@
 """PC-side per-robot Nav2 adapter. Default is read-only; no cmd_vel publisher."""
 import math
+import json
+from pathlib import Path
 import time
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, PolygonStamped
+from nav_msgs.msg import Odometry, OccupancyGrid
 from nav2_msgs.action import FollowPath, Spin
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile, DurabilityPolicy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
@@ -61,6 +63,13 @@ class Nav2Worker(Node):
         self.odom_count=0;self.reject_count=0;self.last_clock_delta=None
         self.last_error='Waiting for odometry / TF'
         self.feedback=None
+        self.local_grid=None;self.body_polygon=None;self.diagnostic_subscriptions=[]
+        if allow_actions:
+            self.diagnostic_subscriptions=[
+                self.create_subscription(OccupancyGrid,f'/{robot}/local_costmap/costmap',
+                    lambda msg:setattr(self,'local_grid',msg),QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)),
+                self.create_subscription(PolygonStamped,f'/{robot}/local_costmap/published_footprint',
+                    lambda msg:setattr(self,'body_polygon',msg),1)]
 
     def odom_callback(self,msg):
         self.odom_count+=1
@@ -136,9 +145,28 @@ class Nav2Worker(Node):
             if not success:
                 self.last_error=f'Nav2 status={response.status}, code={response.result.error_code}: {response.result.error_msg}'
                 self.get_logger().error(self.last_error)
+                if getattr(self,'allow_actions',False):
+                    try:self.save_failure_snapshot(response.status,response.result.error_code)
+                    except Exception as error:self.get_logger().error('Snapshot save failed: '+str(error))
             self.finish(command_id,success)
         except Exception as error:
             self.last_error=str(error);self.finish(command_id,False)
+
+    def save_failure_snapshot(self,status,code):
+        from rosidl_runtime_py.convert import message_to_ordereddict
+        r=self.coordinator.robots[self.robot]
+        payload=dict(robot=self.robot,wall_time=time.time(),status=status,error_code=code,
+                     error=self.last_error,command_id=self.active,phase=r['phase'],map_pose=r['pose'],
+                     pose_source_stamp=r['source'],pose_received_monotonic=r['received'],
+                     velocity=self.velocity,
+                     local_costmap=message_to_ordereddict(self.local_grid) if self.local_grid is not None else None,
+                     published_footprint=message_to_ordereddict(self.body_polygon) if self.body_polygon is not None else None,
+                     note='Latest independent snapshots; inspect individual source stamps before comparing')
+        directory=Path.home()/'CAS_sim_ws/generated_map/mission_logs'
+        directory.mkdir(exist_ok=True)
+        path=directory/(f'nav2_failure_{self.robot}_'+time.strftime('%Y%m%d_%H%M%S')+'.json')
+        path.write_text(json.dumps(payload,indent=2,allow_nan=False))
+        self.get_logger().error('Failure snapshot: '+str(path))
 
     def finish(self,command_id,success):
         if command_id!=self.active:return

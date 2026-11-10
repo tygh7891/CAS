@@ -13,6 +13,9 @@ class PreviewConfiguration(unittest.TestCase):
         folder = Path.home() / 'CAS_sim_ws/generated_map'
         for robot in ['robot_1', 'robot_2']:
             data = PREVIEW.configuration(folder, robot)
+            behavior=data[f'/{robot}/behavior_server']['ros__parameters']
+            self.assertEqual(behavior['max_rotational_vel'],.2)
+            self.assertEqual(behavior['rotational_acc_lim'],.4)
             goal_tolerance=data[f'/{robot}/controller_server']['ros__parameters']['general_goal_checker']['xy_goal_tolerance']
             self.assertLessEqual(goal_tolerance,.015)
             self.assertLess(goal_tolerance,.025)
