@@ -1,0 +1,3 @@
+https://raw.githubusercontent.com/pinklab-art/pinky_pro/d5766186dd4404724e816eb6b8f26fc00b2439cf/pinky_bringup/pinky_bringup/bringup.py
+SHA256 dd956cf678baac97229904fc3d977044bbb2f7950d6a40eaa03790ff865ba907
+Original upstream provenance. Proposed code was applied to robot1 separately; root robot package is unchanged in this branch.

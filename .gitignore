@@ -52,3 +52,21 @@ CATKIN_IGNORE
 
 __pycache__/
 .pytest_cache/
+
+# CAS generated data and private deployment notes
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.env.*
+!.env.example
+**/logs/
+**/robot1_test_result.json
+**/APPLIED.md
+*.local.json
+*.local.yaml
+# Local compatibility links (not part of the shared checkout)
+/monitor.py
+/backup_server
+/mock_connection
+/proposals

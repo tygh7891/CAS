@@ -1,0 +1,13 @@
+{
+  "mode": "simulation_only",
+  "map_id": "MOCK_NOT_FOR_REAL_ROBOTS",
+  "speed_m_s": 0.5,
+  "spin_duration_s": 2.0,
+  "spin_angle_rad": 6.283185307179586,
+  "robot_radius_with_margin_m": 0.10,
+  "zone": {"id": "zone_crossing", "xmin": -0.15, "xmax": 0.15, "ymin": -0.15, "ymax": 0.15},
+  "robots": [
+    {"id": "robot_1", "task_id": "task_B", "destination": "B", "start": [-0.8, -0.8], "wait": [-0.35, -0.35], "exit": [0.35, 0.35], "goal": [0.8, 0.8]},
+    {"id": "robot_2", "task_id": "task_A", "destination": "A", "start": [0.8, -0.8], "wait": [0.35, -0.35], "exit": [-0.35, 0.35], "goal": [-0.8, 0.8]}
+  ]
+}
