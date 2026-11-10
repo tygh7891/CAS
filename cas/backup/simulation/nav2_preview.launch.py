@@ -70,7 +70,7 @@ def configuration(folder, robot):
                     keepout_inflation=dict(plugin='nav2_costmap_2d::InflationLayer', inflation_radius=0.12,
                                            cost_scaling_factor=15.0))
         if scope == 'local':
-            cost.update(rolling_window=True, width=1.0, height=1.0)
+            cost.update(rolling_window=True, width=1, height=1)
         else:
             cost.update(track_unknown_space=True)
         out[f'/{robot}/{scope}_costmap/{scope}_costmap'] = {'ros__parameters': cost}
