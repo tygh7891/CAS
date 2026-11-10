@@ -53,11 +53,11 @@ class Nav2Worker(Node):
                          cli_args=['--ros-args','-r',f'/tf:=/{robot}/tf','-r',f'/tf_static:=/{robot}/tf_static'])
         self.robot,self.coordinator,self.allow_actions=robot,coordinator,allow_actions
         self.buffer=Buffer();self.listener=TransformListener(self.buffer,self)
-        self.clients={'FOLLOW_PATH':ActionClient(self,FollowPath,f'/{robot}/follow_path'),
+        self.action_clients={'FOLLOW_PATH':ActionClient(self,FollowPath,f'/{robot}/follow_path'),
                       'SPIN':ActionClient(self,Spin,f'/{robot}/spin')}
         self.subscription=self.create_subscription(Odometry,f'/{robot}/odom',self.odom_callback,qos_profile_sensor_data)
         self.odom=None;self.received=-math.inf;self.source=-math.inf;self.velocity=None
-        self.active=None;self.handle=None;self.cancel_requested=False;self.deadline=0.0
+        self.active=None;self.goal_handle=None;self.cancel_requested=False;self.deadline=0.0
         self.last_error='Waiting for odometry / TF'
         self.feedback=None
 
@@ -98,9 +98,9 @@ class Nav2Worker(Node):
         if command['kind']=='CANCEL':self.cancel();return
         if self.active is not None:raise RuntimeError('Another command is still active')
         goal=make_goal(command)
-        client=self.clients[command['kind']]
+        client=self.action_clients[command['kind']]
         if not client.server_is_ready():raise RuntimeError('Action server not ready')
-        self.active=command['id'];self.handle=None;self.cancel_requested=False
+        self.active=command['id'];self.goal_handle=None;self.cancel_requested=False
         self.deadline=time.monotonic()+120
         command_id=self.active
         future=client.send_goal_async(goal,feedback_callback=lambda msg:self.on_feedback(command_id,msg))
@@ -116,7 +116,7 @@ class Nav2Worker(Node):
             handle=future.result()
             if not handle.accepted:
                 self.finish(command_id,False);return
-            self.handle=handle
+            self.goal_handle=handle
             # Cancellation before delayed goal acceptance must still cancel it.
             if self.cancel_requested:handle.cancel_goal_async()
             handle.get_result_async().add_done_callback(lambda result:self.completed(command_id,result))
@@ -133,17 +133,17 @@ class Nav2Worker(Node):
 
     def finish(self,command_id,success):
         if command_id!=self.active:return
-        self.active=None;self.handle=None
+        self.active=None;self.goal_handle=None
         self.coordinator.result(self.robot,command_id,success)
 
     def cancel(self):
         self.cancel_requested=True
-        if self.handle is not None:self.handle.cancel_goal_async()
+        if self.goal_handle is not None:self.goal_handle.cancel_goal_async()
 
     def status(self,now):
         r=self.coordinator.robots[self.robot]
         age=None if not math.isfinite(r['received']) else now-r['received']
-        return dict(robot=self.robot,follow_path=self.clients['FOLLOW_PATH'].server_is_ready(),
-                    spin=self.clients['SPIN'].server_is_ready(),pose=r['pose'],pose_age_s=age,
+        return dict(robot=self.robot,follow_path=self.action_clients['FOLLOW_PATH'].server_is_ready(),
+                    spin=self.action_clients['SPIN'].server_is_ready(),pose=r['pose'],pose_age_s=age,
                     odom_velocity=self.velocity,observation_fresh=age is not None and 0<=age<1.0,
                     actions_enabled=self.allow_actions,error=self.last_error)

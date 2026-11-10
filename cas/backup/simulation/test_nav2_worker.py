@@ -1,13 +1,24 @@
 """Adapter checks without starting ROS nodes or sending any action goals."""
+import ast
+import inspect
 import math
 from concurrent.futures import Future
 from types import SimpleNamespace
 import unittest
 from nav2_worker import Nav2Worker, make_goal, source_valid
+from rclpy.node import Node
 from action_msgs.msg import GoalStatus
 
 
 class WorkerTests(unittest.TestCase):
+    def test_worker_attributes_do_not_shadow_readonly_node_properties(self):
+        tree=ast.parse(inspect.getsource(Nav2Worker))
+        assigned={n.attr for n in ast.walk(tree) if isinstance(n,ast.Attribute)
+                  and isinstance(n.ctx,ast.Store) and isinstance(n.value,ast.Name) and n.value.id=='self'}
+        readonly={name for base in Node.__mro__ for name,value in vars(base).items()
+                  if isinstance(value,property) and value.fset is None}
+        self.assertFalse(assigned & readonly, assigned & readonly)
+
     def test_follow_path_preserves_points_and_tangent_yaw(self):
         points=[[.1,.2],[.2,.3],[.3,.4]]
         goal=make_goal(dict(kind='FOLLOW_PATH',target=points))
@@ -34,7 +45,7 @@ class WorkerTests(unittest.TestCase):
             def cancel_goal_async(self):self.canceled=True
             def get_result_async(self):return Future()
         handle=Handle();future=Future();future.set_result(handle)
-        fake=SimpleNamespace(handle=None,cancel_requested=True,
+        fake=SimpleNamespace(goal_handle=None,cancel_requested=True,
                              finish=lambda *a:self.fail('Unexpected finish'),completed=lambda *a:None)
         Nav2Worker.accepted(fake,7,future)
         self.assertTrue(handle.canceled)
