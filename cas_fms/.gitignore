@@ -1,0 +1,3 @@
+.venv/
+.ruff_cache/
+.gazebo_build/

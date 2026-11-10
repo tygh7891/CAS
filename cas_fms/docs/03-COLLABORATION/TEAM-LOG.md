@@ -18,7 +18,7 @@
 | --- | --- |
 | 실물 Pinky Pro 2대와 개발 PC의 확보 시점 | |
 | 실습 맵, 고정 Zone 위치, 대기 위치 | |
-| 관제 방식(PyQt / Flask / 콘솔) | PyQt. [FMS 구현 기준](../01-DESIGN/FMS-ENGINEERING-STANDARDS.md) |
+| 관제 방식(PyQt / Flask / 콘솔) | PyQt. [FMS 팀 개발 기준](../04-ENGINEERING/README.md) |
 | 담당 A 및 담당 B 배정 | |
 | P0에서 빼거나 추가할 항목 | |
 | P1 통신 장애·안전 정지 시험 가능 여부 | |

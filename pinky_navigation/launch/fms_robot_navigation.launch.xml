@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="map"/>
+    <arg name="keepout_mask"/>
+    <arg name="params_file"/>
+
+    <node pkg="nav2_map_server" exec="map_server" name="keepout_mask" output="screen">
+        <param name="yaml_filename" value="$(var keepout_mask)"/>
+        <param name="topic_name" value="/keepout_filter_mask"/>
+    </node>
+    <node pkg="nav2_map_server" exec="costmap_filter_info_server" name="keepout_info" output="screen">
+        <param name="type" value="0"/>
+        <param name="filter_info_topic" value="/keepout_filter_info"/>
+        <param name="mask_topic" value="/keepout_filter_mask"/>
+        <param name="base" value="0.0"/>
+        <param name="multiplier" value="1.0"/>
+    </node>
+
+    <include file="$(find-pkg-share pinky_navigation)/launch/bringup_launch.xml">
+        <arg name="map" value="$(var map)"/>
+        <arg name="params_file" value="$(var params_file)"/>
+        <arg name="use_sim_time" value="false"/>
+        <arg name="controller_cmd_vel_topic" value="/fms/cmd_vel_raw"/>
+        <arg name="behavior_cmd_vel_topic" value="/fms/cmd_vel_raw"/>
+        <arg name="lifecycle_nodes_local" value="['map_server', 'amcl', 'keepout_mask', 'keepout_info']"/>
+    </include>
+</launch>

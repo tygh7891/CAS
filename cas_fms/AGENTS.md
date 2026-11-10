@@ -1,10 +1,11 @@
 # Pinky Fleet Coordinator 작업 지침
 
-이 지침은 프로젝트 루트 아래의 FMS 구현, 수정, 리뷰에 적용한다. FMS 작업을 시작하기 전에 [FMS 구현 기준](docs/01-DESIGN/FMS-ENGINEERING-STANDARDS.md)을 읽고 적용한다. 기능 범위와 우선순위는 [프로젝트 계획](docs/00-PROJECT/PROJECT-PLAN.md)을 참고한다.
+이 지침은 `cas_fms/`의 구현, 수정, 리뷰에 적용한다. 작업을 시작하기 전에 [FMS 설계 패턴과 모듈화 기준](docs/04-ENGINEERING/FMS-ARCHITECTURE.md)과 [Python 코딩 표준과 검증](docs/04-ENGINEERING/PYTHON-STANDARDS.md)을 읽고 적용한다. 과거 제안서 요약과 현재 구현 기준이 다르면 [팀 개발 기준](docs/04-ENGINEERING/README.md)을 적용한다.
 
 ## 구현 규칙
 
-- 윤중호님의 연결 방식을 적용한다. PyQt GUI와 중앙 FMS 서버, 중앙 서버와 로봇별 Worker는 HTTP+JSON으로 연결한다. PC에서 실행되는 Worker가 각 로봇의 ROS 2 도메인에 연결해 Nav2 명령을 전달하고 상태를 수집한다.
+- FMS 서버와 GUI는 `cas_fms` 브랜치에서 독립 구현한다. 각 구현의 API와 내부 구성은 각자 정하고, 구현 후 같은 CAS A1 시나리오로 동작을 비교한다.
+- CAS A1 연결 방식을 적용한다. PyQt GUI와 중앙 FMS 서버, 중앙 서버와 로봇별 Worker는 HTTP+JSON으로 연결한다. PC에서 실행되는 Worker가 각 로봇의 ROS 2 도메인에 연결해 Nav2 명령을 전달하고 상태를 수집한다.
 - 서버를 진입권과 작업 상태의 유일한 관리 주체로 둔다. 서버 코드는 도메인, 유스케이스, HTTP 어댑터로 나누고 관제 규칙을 Qt와 ROS 2에서 분리한다. GUI는 화면, 프레젠터, HTTP 어댑터로 나눈다. 패키지와 외부 의존성은 실제 기능에 필요한 시점에 추가한다.
 - 1차 시연은 `robot_1`의 1→B와 `robot_2`의 2→A 순차 통과, 각 목적지에서 회전 후 정지·대기까지다. 도착과 작업 완료를 구분하고, 복귀는 2차 범위로 둔다.
 - 하나의 Zone에는 동시에 하나의 유효한 진입권만 존재해야 한다. 모든 진입권 상태 변경을 서버의 한 실행 경로에서 순차적으로 처리한다. 안전한 이탈을 확인할 수 없으면 새 진입을 보류한다.
@@ -13,6 +14,6 @@
 
 ## 변경 검증
 
-- Python 코드를 처음 추가할 때부터 Ruff와 pytest 실행 방법을 마련한다. 이후 코드 변경마다 `ruff check .`, `ruff format --check .`, 변경 범위의 pytest를 실행한다.
+- Python 코드를 처음 추가할 때부터 Ruff와 pytest 실행 방법을 마련한다. 이후 코드 변경마다 `cas_fms/`에서 `ruff check .`, `ruff format --check .`, 변경 범위의 pytest를 실행한다.
 - 진입권 규칙을 바꾸면 중복 요청, 동시 진입 요청, 이탈 후 인계, 위치 확인 불가에 대한 관련 검증을 수행한다. 시연 흐름을 바꾸면 목적지 도착 후 회전과 정지 확인까지 검증한다. 장비나 실행 환경 제약으로 확인하지 못한 항목은 작업 결과에 명시한다.
 - Google Docs의 원문 요약과 팀에서 정한 구현 기준은 별도 제목이나 문서로 구분한다.

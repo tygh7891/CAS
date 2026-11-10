@@ -10,6 +10,8 @@
     <arg name="container_name" default="nav2_container"/>
     <arg name="use_respawn" default="False"/>
     <arg name="log_level" default="info"/>
+    <arg name="controller_cmd_vel_topic" default="cmd_vel_nav"/>
+    <arg name="behavior_cmd_vel_topic" default="cmd_vel"/>
     <arg name="lifecycle_nodes" default="['controller_server',
                        'smoother_server',
                        'planner_server',
@@ -26,7 +28,7 @@
 
             <remap from="/tf" to="tf"/>
             <remap from="/tf_static" to="tf_static"/>
-            <remap from="cmd_vel" to="cmd_vel_nav"/>
+            <remap from="cmd_vel" to="$(var controller_cmd_vel_topic)"/>
         </composable_node>
 
         <composable_node pkg="nav2_smoother" plugin="nav2_smoother::SmootherServer" name="smoother_server">            
@@ -54,6 +56,7 @@
 
             <remap from="/tf" to="tf"/>
             <remap from="/tf_static" to="tf_static"/>
+            <remap from="cmd_vel" to="$(var behavior_cmd_vel_topic)"/>
         </composable_node>  
 
         <composable_node pkg="nav2_bt_navigator" plugin="nav2_bt_navigator::BtNavigator" name="bt_navigator">            
@@ -104,7 +107,7 @@
 
             <remap from="/tf" to="tf"/>
             <remap from="/tf_static" to="tf_static"/>
-            <remap from="cmd_vel" to="cmd_vel_nav"/>
+            <remap from="cmd_vel" to="$(var controller_cmd_vel_topic)"/>
         </node>
 
         <node pkg="nav2_smoother" exec="smoother_server" name="smoother_server" output="screen">
@@ -138,6 +141,7 @@
 
             <remap from="/tf" to="tf"/>
             <remap from="/tf_static" to="tf_static"/>
+            <remap from="cmd_vel" to="$(var behavior_cmd_vel_topic)"/>
         </node>
 
         <node pkg="nav2_bt_navigator" exec="bt_navigator" name="bt_navigator" output="screen">

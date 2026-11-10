@@ -1,0 +1,5 @@
+Flask>=3,<4
+PyQt5>=5.15,<6
+PyYAML>=6,<7
+pytest>=7.4,<9
+ruff>=0.9,<1

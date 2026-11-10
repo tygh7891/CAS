@@ -1,0 +1,28 @@
+QMainWindow { background: #eef3f8; }
+QWidget { color: #172d45; font-size: 13px; }
+QLabel { background: transparent; }
+QLabel#heading { font-size: 25px; font-weight: bold; }
+QLabel#panelTitle { font-size: 15px; font-weight: bold; }
+QLabel#metric { font-size: 14px; font-weight: bold; }
+QLabel#muted { color: #4c6178; }
+QLabel#batteryStatus { color: #4c6178; font-size: 12px; }
+QLabel#badge, QLabel#connection {
+    background: #dce9f6; color: #244967; border-radius: 7px; padding: 6px 9px;
+}
+QFrame#panel { background: white; border: 1px solid #d5e0ec; border-radius: 9px; }
+QScrollArea, QWidget#side { background: transparent; }
+QSplitter::handle { width: 10px; background: transparent; }
+QListWidget { background: #f5f8fc; border: 0; border-radius: 6px; padding: 2px; }
+QListWidget::item { border-bottom: 1px solid #e2eaf3; padding: 5px 7px; }
+QPushButton {
+    background: #f4f8fd; border: 1px solid #b9cce1; border-radius: 7px;
+    padding: 7px 10px; font-weight: bold;
+}
+QPushButton:hover { background: #e3edf9; }
+QPushButton:disabled { color: #65768a; background: #edf2f7; border-color: #dce5ef; }
+QPushButton#preset:enabled { color: #ffffff; background: #1c5483; border-color: #1c5483; }
+QPushButton#preset:hover:enabled { background: #2a689b; }
+QPushButton#cancel:enabled { color: #a12f20; background: #fff1ee; border-color: #edbdb5; }
+QPushButton#cancel:hover:enabled { background: #ffe2db; }
+QPushButton#robotTitle { text-align: left; background: #f0f6fc; border-color: transparent; }
+QPushButton#robotTitle:checked { border-color: #7399bd; background: #e5f0fb; }
