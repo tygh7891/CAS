@@ -69,7 +69,7 @@ def candidate_layout(spec,allowed):
             if not (0<=r<h and 0<=c<w and clearance[r,c]>=RADIUS+.005):return False
         return True
     points={}
-    for name,quadrant in [('A',(xx<w/2)&(yy<h/2)),('B',(xx>=w/2)&(yy<h/2)),('1',(xx<w/2)&(yy>=h/2)),('2',(xx>=w/2)&(yy>=h/2))]:
+    for name,quadrant in [('1',(xx<w/2)&(yy<h/2)),('A',(xx>=w/2)&(yy<h/2)),('2',(xx<w/2)&(yy>=h/2)),('B',(xx>=w/2)&(yy>=h/2))]:
         valid=quadrant & (clearance>=CLEARANCE)
         distance=(xx-col)**2+(yy-row)**2
         if not valid.any():raise ValueError('No safe candidate for '+name)
@@ -101,6 +101,7 @@ def candidate_layout(spec,allowed):
         if not clear_segment(a,center) or not clear_segment(center,b):
             raise ValueError(f'Candidate route {start}->center->{goal} lacks footprint clearance; manual planning needed')
     return dict(schema_version=1,status='CANDIDATES_NOT_APPROVED',coordinates_confirmed=False,map_sha256=spec.digest,
+                endpoint_layout='LEFT_STARTS_1_TOP_2_BOTTOM__RIGHT_WORK_A_TOP_B_BOTTOM',
                 mask_semantics='RAW_WHITE_ALLOWED',center_method='two-diagonal least-squares intersection; unapproved',robot_radius_with_margin_m=RADIUS,candidate_min_clearance_m=CLEARANCE,
                 points=points,waiting=waits,shared_zone=dict(center=center.tolist(),polygon=polygon),
                 note='Candidate geometry only. No Nav2 path/rotation/inertia validation. No job execution allowed.')

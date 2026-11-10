@@ -54,6 +54,22 @@ class MapProfileTests(unittest.TestCase):
             p=rotate@(np.array([point['x'],point['y']])-center)
             distance=math.hypot(max(abs(p[0])-.15,0),max(abs(p[1])-.15,0))
             self.assertGreater(distance,RADIUS+.02)
+    def test_starts_on_left_short_edge_work_on_right(self):
+        points=self.candidates['points']
+        pixels={name:self.spec.world_to_image(p['x'],p['y']) for name,p in points.items()}
+        for name in ['1','2']:
+            self.assertLess(pixels[name][0],self.spec.width/2)
+        for name in ['A','B']:
+            self.assertGreater(pixels[name][0],self.spec.width/2)
+        self.assertLess(pixels['1'][1],pixels['2'][1])
+        self.assertLess(pixels['A'][1],pixels['B'][1])
+        world=ET.parse(ROOT/'connection_test.sdf').getroot().find('world')
+        import math
+        for robot,start,target in [('robot_1','1','B'),('robot_2','2','A')]:
+            pose=list(map(float,world.find(f"model[@name='{robot}']/pose").text.split()))
+            a,b=points[start],points[target]
+            self.assertAlmostEqual(pose[5],math.atan2(b['y']-a['y'],b['x']-a['x']))
+
     def test_world_robot_spawn_matches_candidate_starts(self):
         world=ET.parse(ROOT/'connection_test.sdf').getroot().find('world')
         for name,label in [('robot_1','1'),('robot_2','2')]:
