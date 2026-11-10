@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QTimer, QUrl, QPointF, QRectF
 from PyQt5.QtGui import QColor, QPainter, QPen, QPolygonF, QFont
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtWidgets import (QMainWindow,QWidget,QHBoxLayout,QVBoxLayout,QLabel,QPushButton,
-                            QGroupBox,QTextEdit,QMessageBox,QSplitter)
+                            QGroupBox,QTextEdit,QMessageBox,QSplitter,QCheckBox)
 
 PHASE={'IDLE':'대기','TO_WAIT':'대기점 이동','WAITING_ZONE':'공유존 권한 대기','CROSSING':'공유존 통과',
        'TO_GOAL':'목적지 이동','SPINNING':'회전 작업 중','DONE':'완료 · 목적지 대기','HALTED':'중단'}
@@ -76,7 +76,11 @@ class Dashboard(QMainWindow):
         hint=QLabel('초기화는 가상 좌표를 재설정합니다.\n실제 출발점 복귀 명령이 아닙니다.\n취소는 하드웨어 비상정지가 아닙니다.')
         hint.setWordWrap(True);hint.setStyleSheet('color:#64748b;font-size:11px');left.addWidget(hint)
         middle.addWidget(command)
-        mapbox=QGroupBox('지도 · 가상 로봇 위치');ml=QVBoxLayout(mapbox);self.map=MapView();ml.addWidget(self.map);middle.addWidget(mapbox,1)
+        mapbox=QGroupBox('지도 · 가상 로봇 위치');ml=QVBoxLayout(mapbox);self.map_container=ml;self.map=MapView();ml.addWidget(self.map)
+        self.map_metadata=QLabel('');self.map_metadata.setWordWrap(True);ml.addWidget(self.map_metadata)
+        self.mask_toggle=QCheckBox('마스크 흰 영역 강조 (보기 전용 · 적용 의미 미확정)');self.mask_toggle.hide()
+        self.mask_toggle.toggled.connect(self.toggle_mask);ml.addWidget(self.mask_toggle)
+        self.point_info=QLabel('');self.point_info.setWordWrap(True);ml.addWidget(self.point_info);middle.addWidget(mapbox,1)
         right=QVBoxLayout();middle.addLayout(right);self.cards={};self.cancel_buttons={}
         for name in ['robot_1','robot_2']:
             box=QGroupBox('로봇 '+name[-1]);box.setMinimumWidth(280);layout=QVBoxLayout(box)
@@ -129,10 +133,30 @@ class Dashboard(QMainWindow):
                 if e['event'] in ('SERVER_ERROR','ZONE_BLOCKED','HALTED'):detail=e['reason']
                 self.log.append(f"{stamp}  {e['robot_id'] or '서버'}  {EVENTS.get(e['event'],e['event'])}  {detail}")
                 self.last_seq=e['seq']
+        if state.get('map_review'):self.render_map_review(state)
         self.update_buttons()
 
+    def toggle_mask(self,checked):
+        if hasattr(self.map,'show_mask'):self.map.show_mask=checked;self.map.update()
+
+    def render_map_review(self,state):
+        from map_view import ReceivedMapView
+        review=state['map_review']
+        if not isinstance(self.map,ReceivedMapView):
+            old=self.map;self.map=ReceivedMapView();self.map.on_point=self.point_info.setText
+            self.map_container.replaceWidget(old,self.map);old.deleteLater()
+            self.point_info.setText('지도를 클릭하면 map 좌표가 표시됩니다. 작업 목표를 지정하지 않습니다.')
+        self.map.set_review(review)
+        self.mask_toggle.setVisible(review['mask'] is not None)
+        b=review['base']
+        self.map_metadata.setText(f"{b['width']}×{b['height']} px · {b['resolution']*100:.1f} cm/px · 이미지 범위 {b['width']*b['resolution']:.2f}×{b['height']*b['resolution']:.2f}m\n원점 {b['origin']} · 지도 식별 {b['sha256'][:10]}")
+        self.mode.setText('지도 확인 · 주행 명령 잠김');self.setWindowTitle('CAS | 수령 지도 좌표 확인')
+        self.notice.setText('실제 수령 지도 표시 · 가상/실물 로봇 위치 없음 · 좌표 설정 전 작업 실행 잠금')
+        for label in self.cards.values():label.setText('연결기 미실행\n로봇 위치: 미설정\n작업·배터리·정지 상태: 미수신')
+        self.zone.setText('공유존 경계: 미설정\n진입권·점유 판정: 비활성\n마스크는 보기 전용입니다.')
+
     def update_buttons(self):
-        ready=self.connected and not self.pending and self.state is not None
+        ready=self.connected and not self.pending and self.state is not None and not self.state.get('commands_locked',False)
         started=set(self.state['started']) if ready else set()
         blocked=bool(self.state['zone']['blocked_reason']) if ready else True
         for mission,button in self.task_buttons.items():

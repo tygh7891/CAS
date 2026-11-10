@@ -3,15 +3,15 @@
 ## PC 터미널 — 실행
 
 ```bash
-python3 ~/CAS/cas/backup/operator_app/launch.py
+/usr/bin/python3 ~/CAS/cas/backup/operator_app/launch.py
 ```
 
-PyQt5가 설치된 Python 3 환경을 사용합니다. 현재 PC에서 설치를 확인했으며 ROS 환경 설정이나 로봇 연결은 필요 없습니다. 서버와 GUI를 하나의 명령으로 시작합니다. GUI를 닫으면 내부 모의 작업을 취소하고 HTTP 서버도 종료합니다. 실행 중인 실물 구동·팀원 프로그램에는 명령하지 않습니다.
+이 PC의 시스템 Python(`/usr/bin/python3`)에는 PyQt5가 설치되어 있지만 `(ros)` 가상환경에는 없습니다. 위 명령은 가상환경 활성 여부와 관계없이 시스템 Python을 사용합니다. ROS 환경 설정이나 로봇 연결은 필요 없습니다. 서버와 GUI를 하나의 명령으로 시작합니다. GUI를 닫으면 내부 모의 작업을 취소하고 HTTP 서버도 종료합니다. 실행 중인 실물 구동·팀원 프로그램에는 명령하지 않습니다.
 
 기본 포트가 사용 중이면:
 
 ```bash
-python3 ~/CAS/cas/backup/operator_app/launch.py --port 8766
+/usr/bin/python3 ~/CAS/cas/backup/operator_app/launch.py --port 8766
 ```
 
 ## 사용자 확인 순서
@@ -60,10 +60,41 @@ POST 공통: request_id(고유 문자열), session_id(현재 state에서 확인)
 ## PC 터미널 — 검사
 
 ```bash
-python3 ~/CAS/cas/backup/operator_app/test_service.py
-QT_QPA_PLATFORM=offscreen python3 ~/CAS/cas/backup/operator_app/test_gui.py
+/usr/bin/python3 ~/CAS/cas/backup/operator_app/test_service.py
+QT_QPA_PLATFORM=offscreen /usr/bin/python3 ~/CAS/cas/backup/operator_app/test_gui.py
 ```
 
 HTTP·작업 서비스 10개, 오프스크린 GUI/HTTP 1개 검사. 기존 A3 6개·A4 12개 검사도 통과했습니다. GUI 검사는 사용자 데스크톱을 조작하거나 실제 로봇과 통신하지 않으며 화면 미리보기를 /tmp/cas_a5_crossing.png로 저장합니다. 오프스크린 플러그인에서 propagateSizeHints 안내가 나올 수 있습니다.
 
 실제 사용자 화면 실행 확인은 별도로 진행합니다. A5 시제품 통과를 실제 Nav2·물리 주행·충돌 방지 검증 완료로 간주하지 않습니다.
+
+## B1 — 수령 지도 보기·좌표 확인
+
+### PC 터미널
+
+기존 GUI 창을 닫은 뒤 실행합니다. 현재 `(ros)` 가상환경에도 PyQt5·PyYAML 설치가 확인되었습니다.
+
+```bash
+python3 ~/CAS/cas/backup/operator_app/launch.py \
+  --map ~/CAS/map/fleet_world_new.yaml \
+  --mask ~/CAS/map/fleet_x_keepout_new.yaml
+```
+
+- 지도 확인 모드에서는 모든 작업 명령을 GUI와 서버에서 차단합니다. 기존 모의 robot_1/2 위치·공유존을 새 지도에 겹쳐 쓰지 않습니다.
+- 지도 클릭은 픽셀 중심의 map 좌표 확인일 뿐 목적지·출발점·공유존을 등록하지 않습니다.
+- `마스크 흰 영역 강조`를 체크하면 원본 마스크의 밝은 픽셀을 청록색으로 겹쳐 표시합니다. 흰/검정의 통행 허용·금지 의미는 확인 전이며, Nav2 keepout에 적용하지 않습니다.
+- 현재 B1 입력 이미지는 PGM(P2/P5)입니다. YAML은 image·resolution·origin·negate·threshold·mode를 검증합니다. 이미지 표시 자체는 원본 명도를 사용합니다.
+- 좌표 변환은 이미지 상단 row=0과 map 좌표의 y방향 차이 및 원점 yaw를 반영합니다. 픽셀 (column,row) 중심은 image 좌표 (column+0.5,row+0.5)입니다.
+- 두 수령 파일은 192×134px, 0.01m/px, origin=[-0.748,-1.041,0]입니다. 이미지 전체 좌표 범위는 x=[-0.748,1.172], y=[-1.041,0.299]m이며 주행 가능 범위와 다릅니다.
+- 지도와 마스크의 크기·해상도·원점이 다르면 시작을 거부합니다. 원본은 읽기만 하며 Git에 자동 추가하지 않습니다.
+- 이 PC의 map/은 사용자 제공 파일로 남겨두며 다른 PC에서는 파일을 별도로 전달받아 경로를 지정해야 합니다.
+
+기존 임의 좌표 모의 시연은 `--map` 없이 실행하면 그대로 사용할 수 있습니다. 임시 지도에서 Nav2 시뮬레이션을 하려면 B2 가상 공간·센서·두 로봇 구성과 B3 좌표·Action 검증이 추가로 필요합니다.
+
+### PC 터미널 — B1 코드 검사
+
+```bash
+python3 ~/CAS/cas/backup/operator_app/test_maps.py
+```
+
+픽셀 중심·y축 변환, 원점 회전·역변환, 마스크 불일치 거부, 잘못된 값 거부, 서버 명령 차단, 원본 보존 검사를 포함합니다. 화면은 사용자 실행 확인 후 B1 완료로 기록합니다. 내부 오프스크린 미리보기는 preview_map.py로 생성할 수 있으며 로봇·ROS를 사용하지 않습니다.

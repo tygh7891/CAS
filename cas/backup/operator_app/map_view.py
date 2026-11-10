@@ -1,0 +1,61 @@
+"""Read-only base map and optional raw mask visualization for B1."""
+import math
+from PyQt5.QtCore import Qt,QPointF,QRectF
+from PyQt5.QtGui import QColor,QImage,QPainter,QPen
+from PyQt5.QtWidgets import QWidget
+from map_geometry import load_map
+
+class ReceivedMapView(QWidget):
+    def __init__(self):
+        super().__init__();self.setMinimumSize(380,300);self.spec=None;self.mask=None
+        self.image=None;self.overlay=None;self.key=None;self.show_mask=False;self.selected=None
+        self.image_error=None;self.on_point=None;self.state=None
+    def set_review(self,review):
+        key=(review['base']['sha256'],review['mask']['sha256'] if review['mask'] else None)
+        if key==self.key:return
+        self.spec=load_map(review['base']['yaml_path'])
+        self.image=QImage(self.spec.image_path);self.image_error=None
+        if self.image.isNull():self.image_error='지도 이미지를 읽지 못했습니다.'
+        elif (self.image.width(),self.image.height())!=(self.spec.width,self.spec.height):self.image_error='지도 이미지 크기가 메타데이터와 다릅니다.'
+        self.mask=load_map(review['mask']['yaml_path']) if review['mask'] else None
+        self.overlay=None
+        if self.mask:
+            raw=QImage(self.mask.image_path)
+            if raw.isNull():self.image_error='마스크 이미지를 읽지 못했습니다.'
+            else:
+                self.overlay=QImage(raw.size(),QImage.Format_ARGB32);self.overlay.fill(Qt.transparent)
+                for y in range(raw.height()):
+                    for x in range(raw.width()):
+                        if raw.pixelColor(x,y).lightness()>127:self.overlay.setPixelColor(x,y,QColor(0,160,200,100))
+        self.key=key;self.selected=None;self.update()
+    def image_rect(self):
+        if not self.spec:return QRectF()
+        scale=min((self.width()-40)/self.spec.width,(self.height()-60)/self.spec.height)
+        width=self.spec.width*scale;height=self.spec.height*scale
+        return QRectF((self.width()-width)/2,(self.height()-height)/2,width,height)
+    def mousePressEvent(self,event):
+        if self.spec is None or self.image_error:return
+        rect=self.image_rect();pos=QPointF(event.pos())
+        if not rect.contains(pos):return
+        u=(pos.x()-rect.left())/rect.width()*self.spec.width
+        v=(pos.y()-rect.top())/rect.height()*self.spec.height
+        col,row=math.floor(u),math.floor(v)
+        if not(0<=col<self.spec.width and 0<=row<self.spec.height):return
+        self.selected=(col,row);x,y=self.spec.pixel_center(col,row)
+        value=self.image.pixelColor(col,row).lightness()
+        if self.on_point:self.on_point(f'픽셀 ({col}, {row}) 중심 → map: x={x:.3f}m, y={y:.3f}m · 명도 {value} (목표 지정 아님)')
+        self.update()
+    def paintEvent(self,event):
+        p=QPainter(self);p.fillRect(self.rect(),QColor('#f5f7fb'))
+        p.setPen(QColor('#475569'))
+        if self.spec is None:p.drawText(self.rect(),Qt.AlignCenter,'지도 로딩 대기');return
+        if self.image_error:p.drawText(self.rect(),Qt.AlignCenter,self.image_error);return
+        rect=self.image_rect();p.drawImage(rect,self.image)
+        if self.show_mask and self.overlay is not None:p.drawImage(rect,self.overlay)
+        p.setPen(QPen(QColor('#64748b'),1));p.setBrush(Qt.NoBrush);p.drawRect(rect)
+        if self.selected:
+            col,row=self.selected
+            point=QPointF(rect.left()+(col+.5)/self.spec.width*rect.width(),rect.top()+(row+.5)/self.spec.height*rect.height())
+            p.setPen(QPen(QColor('#dc2626'),2));p.drawLine(point+QPointF(-9,0),point+QPointF(9,0));p.drawLine(point+QPointF(0,-9),point+QPointF(0,9))
+        p.setPen(QColor('#334155'));p.drawText(10,18,'수령 지도 · 로봇/목적지/공유존 좌표 미설정')
+        p.setPen(QColor('#64748b'));p.drawText(10,self.height()-10,'상단이 이미지 row=0 · 클릭: 픽셀 중심의 map 좌표 확인')

@@ -16,7 +16,7 @@ A2 모의 연결과 A3 정상 상태 흐름은 사용자 터미널 실행으로 
 ## PC 터미널 — A5 한 화면 관제
 
 ```bash
-python3 ~/CAS/cas/backup/operator_app/launch.py
+/usr/bin/python3 ~/CAS/cas/backup/operator_app/launch.py
 ```
 
 서버와 GUI가 함께 시작됩니다. 실물·ROS 연결은 사용하지 않습니다. 자세한 조작은 operator_app/README.md를 참고하세요.

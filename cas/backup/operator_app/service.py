@@ -57,7 +57,8 @@ class MockAdapter:
             c.cancel_robot(target)
 
 class AppService:
-    def __init__(self, log_dir=None):
+    def __init__(self, log_dir=None, map_review=None):
+        self.map_review=copy.deepcopy(map_review)
         self.lock=threading.RLock()
         self.adapter=MockAdapter()
         self.session=uuid.uuid4().hex[:8]
@@ -98,7 +99,8 @@ class AppService:
             for r in s['robots']:
                 r.update(connection='MOCK_CONNECTED',battery_percent=None,
                          stopped_confirmed=(r['task_state'] in ('IDLE','SUCCEEDED','CANCELED','FAILED') or r['phase']=='WAITING_ZONE'))
-            return dict(mode='MOCK',available_modes=['MOCK'],locked_modes=['SIM_NAV2','REAL_NAV2'],
+            return dict(mode='MAP_REVIEW' if self.map_review else 'MOCK',map_review=copy.deepcopy(self.map_review),
+                commands_locked=bool(self.map_review),available_modes=['MAP_REVIEW'] if self.map_review else ['MOCK'],locked_modes=['SIM_NAV2','REAL_NAV2'],
                 session_id=self.session,active=any(r['task_state']=='RUNNING' for r in c.robots.values()),
                 zone=dict(id=c.zone['id'],owner=c.owner,waiting=list(c.waiting),blocked_reason=c.blocked_reason,
                           occupants=[r['id'] for r in c.robots.values() if c.overlaps(r['position'])]),
@@ -120,6 +122,8 @@ class AppService:
             if body.get('session_id')!=self.session:
                 raise RequestError(409,'오래된 세션 요청입니다. 현재 상태를 다시 조회하세요.')
             if body.get('mode','MOCK')!='MOCK':raise RequestError(409,'실물·Nav2 시뮬레이션 모드는 아직 잠겨 있습니다.')
+            if self.map_review and path in ('/api/v1/tasks','/api/v1/cancel','/api/v1/reset'):
+                raise RequestError(409,'지도 확인 모드: 목적지·대기점·공유존 미설정으로 작업 명령이 잠겨 있습니다.')
             if path=='/api/v1/tasks':
                 mission=body.get('mission')
                 ids={'scenario':['robot_1','robot_2'],'work_B':['robot_1'],'work_A':['robot_2']}.get(mission)
