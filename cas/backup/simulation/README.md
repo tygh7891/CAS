@@ -166,3 +166,21 @@ Nav2 Action 서버를 생성합니다. 초기 위치는 생성된 Gazebo 월드�
 대기점은 각 출발점에서 공유존으로 접근하는 왼쪽 팔에 생성합니다.
 배치 변경 후에는 기존 Nav2와 Gazebo를 종료하고, 지도 Gazebo → Nav2 →
 확인 도구 순서로 재실행해야 월드의 spawn pose와 AMCL 초기 위치가 일치합니다.
+
+### 경로만 계산하기 (주행 명령 없음)
+
+지도 Gazebo와 Nav2 preview가 켜져 있고 B3 확인이 통과한 상태에서 PC의 다른 터미널:
+
+```bash
+bash ~/CAS/cas/backup/simulation/check_paths.sh
+```
+
+`ComputePathToPose`로 현재 추정 위치에서 robot_1→B, robot_2→A 경로를 요청합니다.
+NavigateToPose, Spin, cmd_vel은 전송하지 않습니다. 주행 출력 차단 설정은 그대로 둡니다.
+지도/후보 fingerprint와 경로 frame, 시작/도착 오차, 전체 선분의 통로 포함 여부,
+원형 반경 0.10m의 보수적 여유 공간 및 중앙 공유존 통과를 검사합니다.
+EDT 기반 여유 공간은 픽셀 경계와 샘플 간격의 불확실성을 차감한 하한입니다.
+따라서 경계에 가까운 유효 경로도 실패할 수 있습니다. 실패를 무시해 주행하지 않습니다.
+결과 JSON 및 경로 그림(1번 파랑, 2번 빨강)은 `~/CAS_sim_ws/generated_map/path_checks/`에 저장됩니다.
+이 검사는 시간 충돌, 대기점 정지, 권한 획득/반납, 회전/동역학, 실제 로봇 안전성을 검증하지 않습니다.
+좌표 후보의 승인 상태와 GUI 명령 잠금도 바꾸지 않습니다.
