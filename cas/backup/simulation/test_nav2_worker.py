@@ -49,7 +49,7 @@ class WorkerTests(unittest.TestCase):
             def cancel_goal_async(self):self.canceled=True
             def get_result_async(self):return Future()
         handle=Handle();future=Future();future.set_result(handle)
-        fake=SimpleNamespace(goal_handle=None,cancel_requested=True,
+        fake=SimpleNamespace(active=7,goal_handle=None,cancel_requested=True,
                              finish=lambda *a:self.fail('Unexpected finish'),completed=lambda *a:None)
         Nav2Worker.accepted(fake,7,future)
         self.assertTrue(handle.canceled)
@@ -59,10 +59,25 @@ class WorkerTests(unittest.TestCase):
                                       (GoalStatus.STATUS_ABORTED,0,False),
                                       (GoalStatus.STATUS_SUCCEEDED,106,False)]:
             values=[]
-            fake=SimpleNamespace(finish=lambda *a:values.append(a),get_logger=lambda:SimpleNamespace(error=lambda message:None))
+            fake=SimpleNamespace(active=7,finish=lambda *a:values.append(a),get_logger=lambda:SimpleNamespace(error=lambda message:None))
             future=Future();future.set_result(SimpleNamespace(status=status,result=SimpleNamespace(error_code=code,error_msg='test')))
             Nav2Worker.completed(fake,7,future)
             self.assertEqual(values,[(7,expected)])
+
+    def test_old_acceptance_is_canceled_without_replacing_current_handle(self):
+        canceled=[]
+        old=SimpleNamespace(accepted=True,cancel_goal_async=lambda:canceled.append(True))
+        future=Future();future.set_result(old)
+        current=object();fake=SimpleNamespace(active=8,goal_handle=current)
+        Nav2Worker.accepted(fake,7,future)
+        self.assertEqual(canceled,[True])
+        self.assertIs(fake.goal_handle,current)
+
+    def test_old_result_does_not_finish_new_command(self):
+        values=[];fake=SimpleNamespace(active=8,finish=lambda *a:values.append(a))
+        future=Future();future.set_result(None)
+        Nav2Worker.completed(fake,7,future)
+        self.assertEqual(values,[])
 
     def test_invalid_path_or_spin_rejected(self):
         for command in [dict(kind='FOLLOW_PATH',target=[[0,0]]),

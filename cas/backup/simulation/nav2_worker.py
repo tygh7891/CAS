@@ -135,6 +135,9 @@ class Nav2Worker(Node):
     def accepted(self,command_id,future):
         try:
             handle=future.result()
+            if command_id!=self.active:
+                if handle.accepted:handle.cancel_goal_async()
+                return
             if not handle.accepted:
                 self.finish(command_id,False);return
             self.goal_handle=handle
@@ -145,6 +148,7 @@ class Nav2Worker(Node):
             self.last_error=str(error);self.finish(command_id,False)
 
     def completed(self,command_id,future):
+        if command_id!=self.active:return
         try:
             response=future.result()
             success=response.status==GoalStatus.STATUS_SUCCEEDED and response.result.error_code==0

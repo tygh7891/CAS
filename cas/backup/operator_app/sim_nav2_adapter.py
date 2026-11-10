@@ -288,16 +288,8 @@ class SimNav2Adapter:
             if self.coordinator.blocked and not old_blocked:
                 self._emit('HALTED', None, self.coordinator.blocked, owner=self.coordinator.owner)
 
-            while self.command_index < len(self.coordinator.commands):
-                command = self.coordinator.commands[self.command_index]
-                self.command_index += 1
-                if self.coordinator.blocked and command['kind'] != 'CANCEL':
-                    continue
-                try:
-                    self.workers[command['robot']].submit(command)
-                except Exception as exc:
-                    self.coordinator.halt('Worker dispatch: ' + str(exc))
-                    self._emit('HALTED', command['robot'], self.coordinator.blocked, owner=self.coordinator.owner)
+        # A terminal phase does not mean queued cancellation has been delivered.
+        self._dispatch_commands()
 
         permits = {
             name: worker.active
@@ -312,6 +304,23 @@ class SimNav2Adapter:
         if now - self.last_lease > 0.05:
             self._heartbeat(permits)
         self._sync_events()
+
+    def _dispatch_commands(self):
+        if self.coordinator.blocked:
+            self._heartbeat({})
+        while self.command_index < len(self.coordinator.commands):
+            command = self.coordinator.commands[self.command_index]
+            self.command_index += 1
+            if command['kind'] != 'CANCEL':
+                robot = self.coordinator.robots[command['robot']]
+                if self.coordinator.blocked or robot['pending'] != command['id']:
+                    continue
+            try:
+                self.workers[command['robot']].submit(command)
+            except Exception as exc:
+                self.coordinator.halt('Worker dispatch: ' + str(exc))
+                self._heartbeat({})
+                self._emit('HALTED', command['robot'], self.coordinator.blocked, owner=self.coordinator.owner)
 
     def start(self, ids, session):
         if self.coordinator.blocked:
@@ -335,11 +344,7 @@ class SimNav2Adapter:
 
     def cancel(self, target):
         self.coordinator.cancel(target)
-        while self.command_index < len(self.coordinator.commands):
-            command = self.coordinator.commands[self.command_index]
-            self.command_index += 1
-            if command['kind'] == 'CANCEL':
-                self.workers[command['robot']].cancel()
+        self._dispatch_commands()
         if target == 'all' or self.coordinator.blocked:
             self._heartbeat({})
             if self.coordinator.blocked:
@@ -348,29 +353,58 @@ class SimNav2Adapter:
 
     def reset(self):
         now = self._spin_once()
+        if any(r['phase'] not in ('IDLE', 'DONE', 'HALTED', 'CANCELED')
+               for r in self.coordinator.robots.values()):
+            raise self.request_error_cls(409, '먼저 진행 중인 작업을 취소하세요.')
+        self._dispatch_commands()
+        self._heartbeat({})
+        if (self.relay.poll() is not None or not self.relay_state
+                or now - self.relay_state.get('received', 0.0) > 0.5
+                or self.relay_state.get('blocked')):
+            raise self.request_error_cls(409, 'Relay 상태가 정상이 아닙니다. 관제 앱을 재시작하세요.')
+        if any(self.external_actions.values()):
+            raise self.request_error_cls(409, 'Nav2 작업 종료·취소 확인 대기 중입니다.')
+        observations = {}
         for name in ROBOTS:
-            st = self.workers[name].status(now)
-            if st['pose'] is None or math.dist(st['pose'], self.mission[name]['start']) > 0.05:
-                raise self.request_error_cls(
-                    409,
-                    f'{name} 로봇이 출발점({self.mission[name]["start"]})을 벗어났습니다. Gazebo와 Nav2를 재시작해 초기 위치로 되돌리세요.',
-                )
-        self.coordinator = MissionCoordinator(self.mission, self.polygon, radius=self.radius)
+            worker = self.workers[name]
+            r = self.coordinator.robots[name]
+            st = worker.status(now)
+            if r['phase'] not in ('IDLE', 'DONE', 'HALTED', 'CANCELED'):
+                raise self.request_error_cls(409, '먼저 진행 중인 작업을 취소하세요.')
+            if worker.active is not None or worker.goal_handle is not None:
+                raise self.request_error_cls(409, f'{name} Nav2 종료·취소 결과를 기다리고 있습니다.')
+            velocity = st.get('odom_velocity')
+            if (not st.get('observation_fresh') or st.get('pose_age_s') is None
+                    or not 0 <= st['pose_age_s'] < 1.0
+                    or not 0 <= now - r['received'] < 1.0
+                    or not math.isfinite(r['source']) or not math.isfinite(worker.source)):
+                raise self.request_error_cls(409, f'{name} 최신 위치·속도 수신을 기다리고 있습니다.')
+            if (velocity is None or not all(math.isfinite(v) for v in velocity)
+                    or abs(velocity[0]) > 0.005 or abs(velocity[1]) > 0.03
+                    or r['stopped_since'] is None or now - r['stopped_since'] < 0.3):
+                raise self.request_error_cls(409, f'{name} 정지 확인 대기 중입니다.')
+            if (st['pose'] is None or not all(math.isfinite(v) for v in st['pose'])
+                    or math.dist(st['pose'], self.mission[name]['start']) > 0.05
+                    or zone_distance(st['pose'], self.polygon) <= self.radius):
+                raise self.request_error_cls(409, f'{name} 출발점·공유존 밖 위치가 확인되지 않았습니다. Gazebo와 Nav2를 초기화하세요.')
+            observations[name] = dict(pose=list(st['pose']), source=r['source'],
+                                      received=r['received'], stopped_since=r['stopped_since'])
+        # Keep command IDs increasing across resets so old callbacks cannot match.
+        previous_sequence = self.coordinator.sequence
+        coordinator = MissionCoordinator(self.mission, self.polygon, radius=self.radius)
+        coordinator.sequence = previous_sequence
         for name, worker in self.workers.items():
-            worker.coordinator = self.coordinator
-            worker.active = None
-            worker.goal_handle = None
+            coordinator.robots[name].update(observations[name])
+            worker.coordinator = coordinator
             worker.cancel_requested = False
-            if math.isfinite(worker.source):
-                self.coordinator.robots[name].update(
-                    pose=list(worker.coordinator.robots[name]['pose'] or [0.0, 0.0]),
-                )
-            worker.source = -math.inf
+            # Preserve worker.source: cached odometry must never become fresh again.
+        self.coordinator = coordinator
         self.started.clear()
         self.command_index = 0
         self.coord_event_index = 0
         self.last_phases = {name: 'IDLE' for name in ROBOTS}
-        self._spin_once()
+        self.preflight_ready = False
+        self.preflight_reason = '새 세션 준비 상태 확인 중...'
 
     def snapshot(self):
         now = time.monotonic()

@@ -1,3 +1,21 @@
+# 현재 B5 SIM_NAV2 상태
+
+Gazebo domain84 전용 HTTP/PyQt GUI 연결 코드가 추가됐습니다.
+검사 범위와 현재 실행 순서는 [인계 문서](../HANDOFF.md)를 우선 확인하세요.
+실제 GUI–Nav2 주행 검증은 아직 전이며 REAL_NAV2는 비활성입니다.
+
+```bash
+bash ~/CAS/cas/backup/simulation/run_operator_gui.sh
+```
+
+GUI에서 작업 버튼을 누르면 가상 로봇이 움직입니다. CLI 미션과 동시에 실행하지 않습니다.
+초기화는 최신 정지·Nav2 종료 확인과 출발점 위치를 요구하며 로봇을 이동시키지 않습니다.
+
+---
+
+아래 내용은 기존 MOCK 모드의 사용법과 HTTP 계약입니다. MOCK의 즉시 취소·좌표 초기화 설명을
+SIM_NAV2의 실제 정지 확인과 혼동하지 마세요.
+
 # A5 독립 서버·한 화면 관제 GUI
 
 ## PC 터미널 — 실행
