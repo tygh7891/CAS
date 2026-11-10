@@ -12,8 +12,8 @@ from map_geometry import review_maps
 from service import AppService,create_http
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--map',required=True);parser.add_argument('--mask');args=parser.parse_args()
-    review=review_maps(args.map,args.mask);app=QApplication([])
+    parser=argparse.ArgumentParser();parser.add_argument('--map',required=True);parser.add_argument('--mask');parser.add_argument('--mask-role',default='display');parser.add_argument('--candidates');args=parser.parse_args()
+    review=review_maps(args.map,args.mask,args.mask_role,args.candidates);app=QApplication([])
     service=AppService(map_review=review);server,token=create_http(service,0)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
     window=Dashboard(f'http://127.0.0.1:{server.server_port}',token);window.show()

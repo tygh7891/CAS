@@ -64,11 +64,21 @@ def load_map(path):
     return MapSpec(str(path),str(image),width,height,resolution,origin,negate,occupied,free,mode,
                    hashlib.sha256(raw+b'\0'+pixels).hexdigest())
 
-def review_maps(path,mask_path=None):
+def review_maps(path,mask_path=None,mask_role="display",candidates_path=None):
     base=load_map(path);mask=load_map(mask_path) if mask_path else None
     if mask:
         if (base.width,base.height)!=(mask.width,mask.height):raise ValueError('Mask dimensions differ from map')
         if abs(base.resolution-mask.resolution)>1e-10 or any(abs(a-b)>1e-10 for a,b in zip(base.origin,mask.origin)):
             raise ValueError('Mask coordinates differ from map')
+    if mask_role not in ('display','allowed'):raise ValueError('Invalid mask role')
+    candidates=None
+    if candidates_path:
+        import json
+        candidates=json.loads(Path(candidates_path).expanduser().read_text())
+        if candidates.get('map_sha256')!=base.digest:raise ValueError('Candidate map fingerprint differs')
+        if candidates.get('coordinates_confirmed') is not False:raise ValueError('Only unapproved candidate preview is supported')
+        for point in list(candidates['points'].values())+list(candidates['waiting'].values()):
+            if not all(math.isfinite(point[k]) for k in ('x','y')):raise ValueError('Invalid candidate point')
     return dict(base=base.metadata(),mask=mask.metadata() if mask else None,
-                mask_usage='DISPLAY_ONLY_UNCONFIRMED',coordinates_confirmed=False)
+                mask_usage='WHITE_ALLOWED_CONFIRMED' if mask_role=='allowed' else 'DISPLAY_ONLY_UNCONFIRMED',
+                candidates=candidates,coordinates_confirmed=False)

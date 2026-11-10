@@ -21,6 +21,13 @@ if [[ ! -f "$CAS_SIM_WS/install/local_setup.bash" ]]; then
 fi
 source "$CAS_SIM_WS/install/local_setup.bash"
 set -u
-/usr/bin/python3 "$SCRIPT_DIR/prepare.py" --output "$CAS_SIM_WS/generated"
+CAS_GENERATED_DIR="$CAS_SIM_WS/generated"
+if [[ -n "${CAS_MAP_YAML:-}" ]]; then
+  : "${CAS_MASK_YAML:?CAS_MASK_YAML must specify the allowed-lane YAML}"
+  CAS_GENERATED_DIR="$CAS_SIM_WS/generated_map"
+  /usr/bin/python3 "$SCRIPT_DIR/prepare_map.py" --output "$CAS_GENERATED_DIR" --map "$CAS_MAP_YAML" --mask "$CAS_MASK_YAML"
+else
+  /usr/bin/python3 "$SCRIPT_DIR/prepare.py" --output "$CAS_GENERATED_DIR"
+fi
 echo 'CAS B2: Gazebo 시험 공간 · 도메인 84 · 실물 14/30과 분리 · 이동 명령 없음'
-exec /opt/ros/jazzy/bin/ros2 launch "$SCRIPT_DIR/two_robots.launch.py" generated_dir:="$CAS_SIM_WS/generated" "$@"
+exec /opt/ros/jazzy/bin/ros2 launch "$SCRIPT_DIR/two_robots.launch.py" generated_dir:="$CAS_GENERATED_DIR" "$@"

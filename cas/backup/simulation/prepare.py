@@ -73,15 +73,15 @@ def world_tree():
     scene=ET.SubElement(world,'scene');ET.SubElement(scene,'ambient').text='0.7 0.7 0.7 1';ET.SubElement(scene,'background').text='0.85 0.9 0.95 1'
     return root,world
 
-def prepare(output):
+def prepare(output, world_builder=None, spawn_poses=None):
     from ament_index_python.packages import get_package_share_directory
     import xacro
     output=Path(output).expanduser().resolve();output.mkdir(parents=True,exist_ok=True)
     description=Path(get_package_share_directory('pinky_description'))
     source=description/'urdf/robot.urdf.xacro'
     baseline=xacro.process_file(str(source),mappings={'namespace':'','is_sim':'True','cam_tilt_deg':'0'}).toxml()
-    root,world=world_tree()
-    for name,pose in [('robot_1','-0.45 -0.45 0.02 0 0 0'),('robot_2','0.45 -0.45 0.02 0 0 0')]:
+    root,world=(world_builder or world_tree)()
+    for name,pose in (spawn_poses or [('robot_1','-0.45 -0.45 0.02 0 0 0'),('robot_2','0.45 -0.45 0.02 0 0 0')]):
         urdf=prefix_urdf(baseline,name,description);path=output/f'{name}.urdf';path.write_text(urdf)
         result=subprocess.run(['gz','sdf','-p',str(path)],capture_output=True,text=True,timeout=30,check=True)
         sdf=ET.fromstring(result.stdout);model=sdf.find('model')
@@ -96,7 +96,7 @@ def prepare(output):
     ET.ElementTree(root).write(output/'connection_test.sdf',encoding='unicode',xml_declaration=True)
     (output/'bridge.yaml').write_text(yaml.safe_dump(bridge_config(),sort_keys=False))
     print('PREPARED',output)
-    print('Test room only: not the received SLAM map. No processes or robots started.')
+    print('Offline generation only. No processes or robots started.')
     return output
 
 if __name__=='__main__':

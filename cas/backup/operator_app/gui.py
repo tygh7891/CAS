@@ -148,12 +148,14 @@ class Dashboard(QMainWindow):
             self.point_info.setText('지도를 클릭하면 map 좌표가 표시됩니다. 작업 목표를 지정하지 않습니다.')
         self.map.set_review(review)
         self.mask_toggle.setVisible(review['mask'] is not None)
+        allowed=review.get('mask_usage')=='WHITE_ALLOWED_CONFIRMED'
+        self.mask_toggle.setText('통행 허용 영역 강조 (원본 흰 픽셀 · 파란 통로)' if allowed else '마스크 흰 영역 강조 (보기 전용 · 적용 의미 미확정)')
         b=review['base']
         self.map_metadata.setText(f"{b['width']}×{b['height']} px · {b['resolution']*100:.1f} cm/px · 이미지 범위 {b['width']*b['resolution']:.2f}×{b['height']*b['resolution']:.2f}m\n원점 {b['origin']} · 지도 식별 {b['sha256'][:10]}")
         self.mode.setText('지도 확인 · 주행 명령 잠김');self.setWindowTitle('CAS | 수령 지도 좌표 확인')
         self.notice.setText('실제 수령 지도 표시 · 가상/실물 로봇 위치 없음 · 좌표 설정 전 작업 실행 잠금')
         for label in self.cards.values():label.setText('연결기 미실행\n로봇 위치: 미설정\n작업·배터리·정지 상태: 미수신')
-        self.zone.setText('공유존 경계: 미설정\n진입권·점유 판정: 비활성\n마스크는 보기 전용입니다.')
+        self.zone.setText(('중앙 공유존: 미승인 후보 표시\n' if review.get('candidates') else '공유존 경계: 미설정\n')+'진입권·점유 판정: 비활성\n'+('파란 통로 허용 · 흰 내부 금지\nNav2 제한은 아직 미적용' if allowed else '마스크는 보기 전용입니다.'))
 
     def update_buttons(self):
         ready=self.connected and not self.pending and self.state is not None and not self.state.get('commands_locked',False)

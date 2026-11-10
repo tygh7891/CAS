@@ -9,8 +9,9 @@ class ReceivedMapView(QWidget):
     def __init__(self):
         super().__init__();self.setMinimumSize(380,300);self.spec=None;self.mask=None
         self.image=None;self.overlay=None;self.key=None;self.show_mask=False;self.selected=None
-        self.image_error=None;self.on_point=None;self.state=None
+        self.image_error=None;self.on_point=None;self.state=None;self.candidates=None
     def set_review(self,review):
+        self.candidates=review.get('candidates')
         key=(review['base']['sha256'],review['mask']['sha256'] if review['mask'] else None)
         if key==self.key:return
         self.spec=load_map(review['base']['yaml_path'])
@@ -57,5 +58,17 @@ class ReceivedMapView(QWidget):
             col,row=self.selected
             point=QPointF(rect.left()+(col+.5)/self.spec.width*rect.width(),rect.top()+(row+.5)/self.spec.height*rect.height())
             p.setPen(QPen(QColor('#dc2626'),2));p.drawLine(point+QPointF(-9,0),point+QPointF(9,0));p.drawLine(point+QPointF(0,-9),point+QPointF(0,9))
-        p.setPen(QColor('#334155'));p.drawText(10,18,'수령 지도 · 로봇/목적지/공유존 좌표 미설정')
+        if self.candidates:
+            def screen(x,y):
+                u,v=self.spec.world_to_image(x,y)
+                return QPointF(rect.left()+u/self.spec.width*rect.width(),rect.top()+v/self.spec.height*rect.height())
+            from PyQt5.QtGui import QPolygonF
+            polygon=QPolygonF([screen(*xy) for xy in self.candidates['shared_zone']['polygon']])
+            p.setPen(QPen(QColor('#ca8a04'),2,Qt.DashLine));p.setBrush(QColor(255,220,0,65));p.drawPolygon(polygon)
+            p.setBrush(Qt.NoBrush)
+            for name,point in self.candidates['points'].items():
+                center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#1d4ed8'),2));p.drawEllipse(center,6,6);p.drawText(center+QPointF(8,-6),name+' 후보')
+            for name,point in self.candidates['waiting'].items():
+                center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#b45309'),2));p.drawEllipse(center,4,4);p.drawText(center+QPointF(6,14),'W'+name[-1])
+        p.setPen(QColor('#334155'));p.drawText(10,18,'수령 지도 · 좌표 후보는 미승인 / 주행 불가')
         p.setPen(QColor('#64748b'));p.drawText(10,self.height()-10,'상단이 이미지 row=0 · 클릭: 픽셀 중심의 map 좌표 확인')

@@ -11,8 +11,11 @@ def main():
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--map',dest='map_path',help='지도 YAML: 보기·좌표 확인 전용')
     parser.add_argument('--mask',dest='mask_path',help='선택 마스크 YAML: 보기 전용')
+    parser.add_argument('--mask-role',choices=['display','allowed'],default='display')
+    parser.add_argument('--candidates',help='미승인 좌표 후보 JSON, 보기 전용')
     args=parser.parse_args()
     if args.mask_path and not args.map_path:parser.error('--mask requires --map')
+    if args.candidates and not args.map_path:parser.error('--candidates requires --map')
     if not 1<=args.port<=65535:parser.error('port must be 1–65535')
     try:
         from PyQt5.QtWidgets import QApplication
@@ -28,7 +31,7 @@ def main():
     if args.map_path:
         try:
             from map_geometry import review_maps
-            review=review_maps(args.map_path,args.mask_path)
+            review=review_maps(args.map_path,args.mask_path,args.mask_role,args.candidates)
         except (OSError,ValueError,KeyError,ImportError) as exc:
             print(f'지도 읽기 실패: {exc}');return 1
     service=AppService(Path(__file__).resolve().parent/'logs',map_review=review)
