@@ -93,6 +93,8 @@ class GuiTests(unittest.TestCase):
             self.fail('SIM_NAV2 GUI state did not arrive')
         try:
             pump_until(lambda:window.connected and window.state and window.state.get('mode')=='SIM_NAV2')
+            pump_until(lambda:window.mask_toggle.y()-(window.map_metadata.y()+window.map_metadata.height())<=12
+                       and window.point_info.y()-(window.mask_toggle.y()+window.mask_toggle.height())<=12)
             self.assertTrue(window.task_buttons['scenario'].isEnabled())
             ready=copy.deepcopy(window.state)
             missing=copy.deepcopy(ready)

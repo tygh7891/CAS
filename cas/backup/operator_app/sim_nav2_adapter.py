@@ -49,6 +49,16 @@ def path_distance(point, path):
     return minimum
 
 
+def drain_callbacks(executor, budget=0.02, limit=200):
+    """Drain a bounded batch; one callback per 50ms starves clock/TF/odom."""
+    deadline=time.monotonic()+budget
+    count=0
+    while count<limit and time.monotonic()<deadline:
+        executor.spin_once(timeout_sec=0.0)
+        count+=1
+    return count
+
+
 def build_layout(scenario, mission):
     xs = [p[0] for p in scenario['shared_zone']['polygon']]
     ys = [p[1] for p in scenario['shared_zone']['polygon']]
@@ -204,7 +214,7 @@ class SimNav2Adapter:
             self.sender_stop.wait(0.04)
 
     def _spin_once(self):
-        self.executor.spin_once(timeout_sec=0.01)
+        self.last_callback_count=drain_callbacks(self.executor)
         now = time.monotonic()
         for worker in self.workers.values():
             worker.poll(now)

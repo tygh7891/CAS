@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QTimer, QUrl, QPointF, QRectF
 from PyQt5.QtGui import QColor, QPainter, QPen, QPolygonF, QFont
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtWidgets import (QMainWindow,QWidget,QHBoxLayout,QVBoxLayout,QLabel,QPushButton,
-                            QGroupBox,QTextEdit,QMessageBox,QSplitter,QCheckBox)
+                            QGroupBox,QTextEdit,QMessageBox,QSplitter,QCheckBox,QSizePolicy)
 
 PHASE={'IDLE':'대기','TO_WAIT':'대기점 이동','WAITING_ZONE':'공유존 권한 대기','CROSSING':'공유존 통과',
        'TO_GOAL':'목적지 이동','SPINNING':'회전 작업 중','DONE':'완료 · 목적지 대기','HALTED':'중단'}
@@ -76,11 +76,11 @@ class Dashboard(QMainWindow):
         hint=QLabel('초기화는 가상 좌표를 재설정합니다.\n실제 출발점 복귀 명령이 아닙니다.\n취소는 하드웨어 비상정지가 아닙니다.')
         hint.setWordWrap(True);hint.setStyleSheet('color:#64748b;font-size:11px');left.addWidget(hint)
         middle.addWidget(command)
-        mapbox=QGroupBox('지도 · 가상 로봇 위치');ml=QVBoxLayout(mapbox);self.map_container=ml;self.map=MapView();ml.addWidget(self.map)
-        self.map_metadata=QLabel('');self.map_metadata.setWordWrap(True);ml.addWidget(self.map_metadata)
-        self.mask_toggle=QCheckBox('마스크 흰 영역 강조 (보기 전용 · 적용 의미 미확정)');self.mask_toggle.hide()
+        mapbox=QGroupBox('지도 · 가상 로봇 위치');ml=QVBoxLayout(mapbox);self.map_container=ml;ml.setSpacing(6);self.map=MapView();ml.addWidget(self.map,1)
+        self.map_metadata=QLabel('');self.map_metadata.setWordWrap(True);self.map_metadata.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed);ml.addWidget(self.map_metadata)
+        self.mask_toggle=QCheckBox('마스크 흰 영역 강조 (보기 전용 · 적용 의미 미확정)');self.mask_toggle.hide();self.mask_toggle.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed)
         self.mask_toggle.toggled.connect(self.toggle_mask);ml.addWidget(self.mask_toggle)
-        self.point_info=QLabel('');self.point_info.setWordWrap(True);ml.addWidget(self.point_info);middle.addWidget(mapbox,1)
+        self.point_info=QLabel('');self.point_info.setWordWrap(True);self.point_info.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed);ml.addWidget(self.point_info);middle.addWidget(mapbox,1)
         right=QVBoxLayout();middle.addLayout(right);self.cards={};self.cancel_buttons={}
         for name in ['robot_1','robot_2']:
             box=QGroupBox('로봇 '+name[-1]);box.setMinimumWidth(280);layout=QVBoxLayout(box)
@@ -157,7 +157,7 @@ class Dashboard(QMainWindow):
         if not isinstance(self.map,ReceivedMapView):
             old=self.map;self.map=ReceivedMapView();self.map.on_point=self.point_info.setText
             self.map.show_mask=True
-            self.map_container.replaceWidget(old,self.map);old.deleteLater()
+            self.map_container.replaceWidget(old,self.map);self.map_container.setStretchFactor(self.map,1);old.deleteLater()
             self.mask_toggle.setChecked(True)
             self.point_info.setText('지도를 클릭하면 map 좌표가 표시됩니다. (Gazebo SIM_NAV2 실시간 관제)')
         self.map.state=state
@@ -176,7 +176,7 @@ class Dashboard(QMainWindow):
         review=state['map_review']
         if not isinstance(self.map,ReceivedMapView):
             old=self.map;self.map=ReceivedMapView();self.map.on_point=self.point_info.setText
-            self.map_container.replaceWidget(old,self.map);old.deleteLater()
+            self.map_container.replaceWidget(old,self.map);self.map_container.setStretchFactor(self.map,1);old.deleteLater()
             self.point_info.setText('지도를 클릭하면 map 좌표가 표시됩니다. 작업 목표를 지정하지 않습니다.')
         self.map.set_review(review)
         self.mask_toggle.setVisible(review['mask'] is not None)

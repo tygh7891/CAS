@@ -2,7 +2,8 @@
 import math
 from types import SimpleNamespace
 import unittest
-from sim_nav2_adapter import SimNav2Adapter, ROBOTS
+from sim_nav2_adapter import SimNav2Adapter, ROBOTS, drain_callbacks
+from unittest.mock import patch
 from zone_coordinator import MissionCoordinator
 from service import RequestError
 
@@ -41,6 +42,22 @@ class AdapterControlTests(unittest.TestCase):
         a._spin_once=lambda:10.5;a._evaluate_preflight=lambda now:(True,'test')
         a._sync_events=lambda:None
         self.permits=[];a._heartbeat=lambda permits:self.permits.append(permits)
+
+    def test_callback_batch_drains_multiple_stream_events_without_nodes(self):
+        events=list(range(20));processed=[]
+        def spin_once(timeout_sec):
+            self.assertEqual(timeout_sec,0.)
+            if events:processed.append(events.pop(0))
+        with patch('sim_nav2_adapter.time.monotonic',return_value=100.):
+            self.assertEqual(drain_callbacks(SimpleNamespace(spin_once=spin_once),limit=25),25)
+        self.assertEqual(processed,list(range(20)))
+
+    def test_callback_batch_respects_time_budget(self):
+        clock=[100.];calls=[]
+        def spin_once(timeout_sec):calls.append(True);clock[0]+=.015
+        with patch('sim_nav2_adapter.time.monotonic',side_effect=lambda:clock[0]):
+            self.assertEqual(drain_callbacks(SimpleNamespace(spin_once=spin_once),budget=.02),2)
+        self.assertEqual(len(calls),2)
 
     def test_halted_robots_still_dispatch_pending_cancel(self):
         a=self.a;a.coordinator.start();a.command_index=len(a.coordinator.commands)

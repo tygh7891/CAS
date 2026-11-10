@@ -86,7 +86,9 @@ class ReceivedMapView(QWidget):
             suffix='' if sim_mode else ' 후보'
             for name,point in self.candidates['points'].items():
                 center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#1d4ed8'),2));p.drawEllipse(center,6,6);p.drawText(center+QPointF(8,-6),name+suffix)
-            for name,point in self.candidates['waiting'].items():
+            waits=({r['id']:dict(x=r['wait'][0],y=r['wait'][1]) for r in self.state.get('layout',{}).get('robots',[])}
+                   if sim_mode else self.candidates['waiting'])
+            for name,point in waits.items():
                 center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#b45309'),2));p.drawEllipse(center,4,4);p.drawText(center+QPointF(6,14),'W'+name[-1])
             if sim_mode:
                 colors={'robot_1':'#2563eb','robot_2':'#d97706'}
