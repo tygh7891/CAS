@@ -72,6 +72,13 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(self.c.result(name,-1,True))
         self.assertEqual(r['phase'],'CROSSING')
 
+    def test_stop_shorter_than_old_4cm_tolerance_cannot_grant(self):
+        for name,r in self.c.robots.items():self.c.result(name,r['pending'],True)
+        for _ in range(6):
+            self.observe({'robot_1':[-.435,-.05]})  # 3.5cm short: not a valid handoff
+        self.assertIsNotNone(self.c.blocked)
+        self.assertIsNone(self.c.owner)
+
     def test_unpermitted_entry_blocks_everything(self):
         self.ready()
         self.observe({'robot_2':[0,0]})

@@ -78,21 +78,21 @@ class MissionCoordinator:
             stopped=r['stopped_since'] is not None and now-r['stopped_since']>=.3
             phase=r['phase']
             if phase=='VERIFY_WAIT' and stopped:
-                if math.dist(r['pose'],self.routes[name]['wait'])>.04 or overlap:
+                if math.dist(r['pose'],self.routes[name]['wait'])>.02 or overlap:
                     self.halt('Invalid waiting position: '+name);return
                 r['phase']='WAITING'
                 if name not in self.queue:self.queue.append(name)
                 self.emit(name,'ZONE_REQUESTED')
             elif phase=='VERIFY_EXIT' and stopped:
                 if overlap or not r['entered']:continue
-                if math.dist(r['pose'],self.routes[name]['exit'])>.04:
+                if math.dist(r['pose'],self.routes[name]['exit'])>.02:
                     self.halt('Invalid exit position: '+name);return
                 self.owner=None
                 self.emit(name,'ZONE_RELEASED')
                 r['phase']='TO_GOAL'
                 self.command(name,'FOLLOW_PATH',self.routes[name]['segments'][2]['path'])
             elif phase=='VERIFY_GOAL' and stopped:
-                if math.dist(r['pose'],self.routes[name]['goal'])>.04:
+                if math.dist(r['pose'],self.routes[name]['goal'])>.02:
                     self.halt('Invalid destination: '+name);return
                 r['phase']='SPINNING'
                 self.command(name,'SPIN',2*math.pi)

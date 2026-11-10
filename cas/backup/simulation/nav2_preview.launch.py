@@ -35,7 +35,7 @@ def configuration(folder, robot):
     c.update(odom_topic=f'/{robot}/odom', controller_frequency=10.0,
              controller_plugins=['FollowPath'])
     c['progress_checker'].update(required_movement_radius=0.03, movement_time_allowance=15.0)
-    c['general_goal_checker'].update(xy_goal_tolerance=0.04, yaw_goal_tolerance=0.15)
+    c['general_goal_checker'].update(xy_goal_tolerance=0.015, yaw_goal_tolerance=0.15)
     c['FollowPath'] = dict(plugin='nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController',
                           desired_linear_vel=0.08, lookahead_dist=0.15, min_lookahead_dist=0.10,
                           max_lookahead_dist=0.25, rotate_to_heading_angular_vel=0.4,
