@@ -30,7 +30,7 @@ class MissionCoordinator:
             raise ValueError('Mission already started')
         for name,r in self.robots.items():
             r['phase']='TO_WAIT'
-            self.command(name,'NAVIGATE',self.routes[name]['wait'])
+            self.command(name,'FOLLOW_PATH',self.routes[name]['segments'][0]['path'])
 
     def observation(self,name,position,source,received,linear,angular):
         r=self.robots[name]
@@ -90,7 +90,7 @@ class MissionCoordinator:
                 self.owner=None
                 self.emit(name,'ZONE_RELEASED')
                 r['phase']='TO_GOAL'
-                self.command(name,'NAVIGATE',self.routes[name]['goal'])
+                self.command(name,'FOLLOW_PATH',self.routes[name]['segments'][2]['path'])
             elif phase=='VERIFY_GOAL' and stopped:
                 if math.dist(r['pose'],self.routes[name]['goal'])>.04:
                     self.halt('Invalid destination: '+name);return
@@ -105,4 +105,4 @@ class MissionCoordinator:
             r['phase']='CROSSING'
             r['entered']=False
             self.emit(self.owner,'ZONE_GRANTED')
-            self.command(self.owner,'NAVIGATE',self.routes[self.owner]['exit'])
+            self.command(self.owner,'FOLLOW_PATH',self.routes[self.owner]['segments'][1]['path'])

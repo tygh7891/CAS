@@ -36,13 +36,14 @@ def main():
     results = {}
     paths = {}
     reference = None
+    reference_report = None
     if args.segments:
         for candidate in sorted((folder/'path_checks').glob('*.json'), reverse=True):
             data=json.loads(candidate.read_text())
             if (not data.get('explicit_future_starts') and data.get('map_sha256')==spec.digest
                     and all(data.get('checks',{}).get(name,{}).get('passed') for name in ['robot_1','robot_2'])
                     and all(name in data.get('paths',{}) for name in ['robot_1','robot_2'])):
-                reference=data['paths'];break
+                reference=data['paths'];reference_report=str(candidate);break
         if reference is None:
             raise ValueError('Run full path check first; no matching passed reference paths')
     # Full-route mode only needs the direction, not segmented geometry.
@@ -65,37 +66,43 @@ def main():
             try:
                 if any(node.count_publishers(f'/{name}/cmd_vel') for name in ['robot_1', 'robot_2']):
                     raise RuntimeError('Motor output is not isolated; stop this check')
-                client = ActionClient(node, ComputePathToPose, f'/{robot}/compute_path_to_pose')
-                if not client.wait_for_server(timeout_sec=15):
-                    raise RuntimeError('Planner action not ready')
-                goal = ComputePathToPose.Goal()
-                goal.planner_id = 'GridBased'
-                goal.use_start = args.segments
                 if args.segments:
-                    # Future legs use explicit hypothetical start poses: planning only.
-                    goal.start.header.frame_id = 'map'
-                    goal.start.pose.position.x, goal.start.pose.position.y = begin
-                    goal.start.pose.orientation.z = math.sin(mission[robot]['yaw']/2)
-                    goal.start.pose.orientation.w = math.cos(mission[robot]['yaw']/2)
-                goal.goal.header.frame_id = 'map'
-                goal.goal.pose.position.x, goal.goal.pose.position.y = end
-                goal.goal.pose.orientation.z = math.sin(mission[robot]['yaw']/2)
-                goal.goal.pose.orientation.w = math.cos(mission[robot]['yaw']/2)
-                handle = wait(node, client.send_goal_async(goal))
-                if not handle.accepted:
-                    raise RuntimeError('Planner rejected request')
-                future = handle.get_result_async()
-                try:
-                    response = wait(node, future)
-                except TimeoutError:
-                    wait(node, handle.cancel_goal_async(), 5)
-                    raise
-                value = response.result
-                if response.status != GoalStatus.STATUS_SUCCEEDED or value.error_code:
-                    raise RuntimeError(f'Planner status={response.status} code={value.error_code}: {value.error_msg}')
-                if value.path.header.frame_id != 'map' or any(p.header.frame_id not in ['', 'map'] for p in value.path.poses):
-                    raise ValueError('Unexpected path frame')
-                points = [(p.pose.position.x, p.pose.position.y) for p in value.path.poses]
+                    # Preserve the verified global path exactly. Replanning a leg
+                    # can cut different corners and invalidate its clearance.
+                    points = next(item['path'] for item in mission[robot]['segments'] if item['name']==segment)
+                else:
+                    client = ActionClient(node, ComputePathToPose, f'/{robot}/compute_path_to_pose')
+                    if not client.wait_for_server(timeout_sec=15):
+                        raise RuntimeError('Planner action not ready')
+                    goal = ComputePathToPose.Goal()
+                    goal.planner_id = 'GridBased'
+                    goal.use_start = args.segments
+                    if args.segments:
+                        # Future legs use explicit hypothetical start poses: planning only.
+                        goal.start.header.frame_id = 'map'
+                        goal.start.pose.position.x, goal.start.pose.position.y = begin
+                        goal.start.pose.orientation.z = math.sin(mission[robot]['yaw']/2)
+                        goal.start.pose.orientation.w = math.cos(mission[robot]['yaw']/2)
+                    goal.goal.header.frame_id = 'map'
+                    goal.goal.pose.position.x, goal.goal.pose.position.y = end
+                    goal.goal.pose.orientation.z = math.sin(mission[robot]['yaw']/2)
+                    goal.goal.pose.orientation.w = math.cos(mission[robot]['yaw']/2)
+                    handle = wait(node, client.send_goal_async(goal))
+                    if not handle.accepted:
+                        raise RuntimeError('Planner rejected request')
+                    future = handle.get_result_async()
+                    try:
+                        response = wait(node, future)
+                    except TimeoutError:
+                        wait(node, handle.cancel_goal_async(), 5)
+                        raise
+                    value = response.result
+                    if response.status != GoalStatus.STATUS_SUCCEEDED or value.error_code:
+                        raise RuntimeError(f'Planner status={response.status} code={value.error_code}: {value.error_msg}')
+                    if value.path.header.frame_id != 'map' or any(p.header.frame_id not in ['', 'map'] for p in value.path.poses):
+                        raise ValueError('Unexpected path frame')
+                    points = [(p.pose.position.x, p.pose.position.y) for p in value.path.poses]
+                    client.destroy()
                 checks = audit(points, spec, allowed, scenario['shared_zone']['polygon'], scenario['robot_radius_with_margin_m'])
                 checks['start_error_m'] = math.dist(points[0], begin)
                 checks['goal_error_m'] = math.dist(points[-1], end)
@@ -114,11 +121,11 @@ def main():
                 checks['passed'] = all(checks[k] for k in ['center_in_allowed_lane', 'footprint_clear', 'zone_rule_ok']) and checks['start_error_m'] <= .05 and checks['goal_error_m'] <= .04
                 results[key] = checks
                 paths[key] = points
-                client.destroy()
             except Exception as error:
                 results[key] = dict(passed=False, error=str(error))
         payload = dict(domain=84, mode='PLAN_ONLY_NO_MOTION', map_sha256=spec.digest,
-                       coordinates_confirmed=False, explicit_future_starts=args.segments, mission_routes=mission, checks=results, paths=paths)
+                       coordinates_confirmed=False, explicit_future_starts=args.segments,
+                       reference_report=reference_report, path_source='VERIFIED_FULL_PATH_SLICES' if args.segments else 'NAV2_CURRENT_POSE_PLAN', mission_routes=mission, checks=results, paths=paths)
         logs = folder/'path_checks'
         logs.mkdir(exist_ok=True)
         stem = ('segments_' if args.segments else '') + time.strftime('%Y%m%d_%H%M%S')

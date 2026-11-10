@@ -28,13 +28,14 @@ def routes(scenario, reference_paths):
             raise ValueError('Verified reference route endpoints differ: '+robot)
         overlaps = [i for i,p in enumerate(path) if zone_distance(p,polygon)<=radius]
         if not overlaps:raise ValueError('Reference route misses shared zone: '+robot)
-        approach = [p for p in path[:min(overlaps)] if zone_distance(p,polygon)>=separation]
-        departure = [p for p in path[max(overlaps)+1:] if zone_distance(p,polygon)>=separation]
+        approach = [i for i in range(min(overlaps)) if zone_distance(path[i],polygon)>=separation]
+        departure = [i for i in range(max(overlaps)+1,len(path)) if zone_distance(path[i],polygon)>=separation]
         if not approach or not departure:raise ValueError('No waiting / exit reserve: '+robot)
-        wait, exit_point = list(approach[-1]), list(departure[0])
+        wait_index, exit_index = approach[-1], departure[0]
+        wait, exit_point = list(path[wait_index]), list(path[exit_index])
         yaw = math.atan2(goal[1]-begin[1],goal[0]-begin[0])
         result[robot] = dict(start=begin,wait=wait,exit=exit_point,goal=goal,yaw=yaw,destination=target,
-                            segments=[dict(name='approach',start=begin,goal=wait,requires_permission=False),
-                                      dict(name='crossing',start=wait,goal=exit_point,requires_permission=True),
-                                      dict(name='departure',start=exit_point,goal=goal,requires_permission=False)])
+                            segments=[dict(name='approach',start=begin,goal=wait,path=path[:wait_index+1],requires_permission=False),
+                                      dict(name='crossing',start=wait,goal=exit_point,path=path[wait_index:exit_index+1],requires_permission=True),
+                                      dict(name='departure',start=exit_point,goal=goal,path=path[exit_index:],requires_permission=False)])
     return result

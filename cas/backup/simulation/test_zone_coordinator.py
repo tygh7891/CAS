@@ -8,7 +8,10 @@ ROUTES={name:dict(wait=[-.4,y],exit=[.4,y],goal=[.8,y]) for name,y in [('robot_1
 
 class CoordinatorTests(unittest.TestCase):
     def setUp(self):
-        self.c=MissionCoordinator(copy.deepcopy(ROUTES),POLYGON)
+        route_data=copy.deepcopy(ROUTES)
+        for route in route_data.values():
+            route['segments']=[dict(path=[route['wait']]),dict(path=[route['wait'],route['exit']]),dict(path=[route['exit'],route['goal']])]
+        self.c=MissionCoordinator(route_data,POLYGON)
         self.now=0.0
         self.c.start()
 
