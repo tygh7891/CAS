@@ -26,6 +26,10 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual([[p.pose.position.x,p.pose.position.y] for p in goal.path.poses],points)
         self.assertAlmostEqual(goal.path.poses[-1].pose.orientation.z,math.sin(math.pi/8))
         self.assertEqual(goal.controller_id,'FollowPath')
+        hooked=[[0.0,0.0],[0.04,0.0],[0.045,0.005]]
+        hook_goal=make_goal(dict(kind='FOLLOW_PATH',target=hooked))
+        expected_yaw=math.atan2(0.005,0.045)
+        self.assertAlmostEqual(hook_goal.path.poses[-1].pose.orientation.z,math.sin(expected_yaw/2))
 
     def test_wrong_robot_and_readonly_submission_are_rejected(self):
         fake=SimpleNamespace(robot='robot_1',allow_actions=False)

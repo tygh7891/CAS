@@ -29,7 +29,11 @@ def make_goal(command):
             pose=PoseStamped()
             pose.header.frame_id='map'
             pose.pose.position.x=float(point[0]);pose.pose.position.y=float(point[1])
-            a,b=(point,points[i+1]) if i+1<len(points) else (points[i-1],point)
+            if i+1<len(points):
+                a,b=point,points[i+1]
+            else:
+                j=next((k for k in range(i-1,-1,-1) if math.dist(points[k],point)>=.03),0)
+                a,b=points[j],point
             yaw=math.atan2(b[1]-a[1],b[0]-a[0])
             pose.pose.orientation.z=math.sin(yaw/2)
             pose.pose.orientation.w=math.cos(yaw/2)

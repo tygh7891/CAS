@@ -42,7 +42,10 @@ def main():
             data=json.loads(candidate.read_text())
             if (not data.get('explicit_future_starts') and data.get('map_sha256')==spec.digest
                     and all(data.get('checks',{}).get(name,{}).get('passed') for name in ['robot_1','robot_2'])
-                    and all(name in data.get('paths',{}) for name in ['robot_1','robot_2'])):
+                    and all(name in data.get('paths',{}) for name in ['robot_1','robot_2'])
+                    and all(math.dist(data['paths'][r][0],[scenario['points'][s]['x'],scenario['points'][s]['y']])<=.05
+                            and math.dist(data['paths'][r][-1],[scenario['points'][t]['x'],scenario['points'][t]['y']])<=.04
+                            for r,s,t in [('robot_1','1','B'),('robot_2','2','A')])):
                 reference=data['paths'];reference_report=str(candidate);break
         if reference is None:
             raise ValueError('Run full path check first; no matching passed reference paths')

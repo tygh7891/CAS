@@ -15,6 +15,8 @@ from map_geometry import load_map,review_maps
 
 RADIUS=0.10
 CLEARANCE=0.12
+GOAL_CLEARANCE=0.128
+GOAL_WALL_CLEARANCE=0.22
 
 def rectangles(binary):
     """Exact nonoverlapping pixel rectangles; no wall dilation/smoothing."""
@@ -47,8 +49,9 @@ def arrays(map_path,mask_path):
     allowed=(mask_raw==255)&free
     return spec,occupied,allowed
 
-def candidate_layout(spec,allowed):
+def candidate_layout(spec,allowed,occupied=None):
     clearance=distance_transform_edt(np.pad(allowed,1,constant_values=False))[1:-1,1:-1]*spec.resolution
+    wall_clearance=distance_transform_edt(~occupied)*spec.resolution if occupied is not None else clearance
     h,w=allowed.shape
     yy,xx=np.indices(allowed.shape)
     diagonal_a=allowed & (((xx<w*.4)&(yy<h*.4))|((xx>w*.6)&(yy>h*.6)))
@@ -70,7 +73,10 @@ def candidate_layout(spec,allowed):
         return True
     points={}
     for name,quadrant in [('1',(xx<w/2)&(yy<h/2)),('A',(xx>=w/2)&(yy<h/2)),('2',(xx<w/2)&(yy>=h/2)),('B',(xx>=w/2)&(yy>=h/2))]:
-        valid=quadrant & (clearance>=CLEARANCE)
+        if name in ('A','B'):
+            valid=quadrant & (clearance>=GOAL_CLEARANCE) & (wall_clearance>=GOAL_WALL_CLEARANCE)
+        else:
+            valid=quadrant & (clearance>=CLEARANCE)
         distance=(xx-col)**2+(yy-row)**2
         if not valid.any():raise ValueError('No safe candidate for '+name)
         choices=np.argwhere(valid)
@@ -134,7 +140,7 @@ def add_geometry(world,spec,occupied,allowed,candidates):
 
 def prepare_map(output,map_path,mask_path):
     output=Path(output).expanduser().resolve();output.mkdir(parents=True,exist_ok=True)
-    spec,occupied,allowed=arrays(map_path,mask_path);candidates=candidate_layout(spec,allowed)
+    spec,occupied,allowed=arrays(map_path,mask_path);candidates=candidate_layout(spec,allowed,occupied)
     # With negate=0: white free, black blocked. Combine lane policy with real/unknown map cells.
     Image.fromarray(np.where(allowed,255,0).astype(np.uint8)).save(output/'nav2_keepout_draft.pgm')
     metadata=dict(image='nav2_keepout_draft.pgm',mode='trinary',resolution=spec.resolution,origin=list(spec.origin),negate=0,occupied_thresh=.65,free_thresh=.196)

@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import distance_transform_edt
 import yaml
-from prepare_map import rectangles,arrays,RADIUS
+from prepare_map import rectangles,arrays,RADIUS,GOAL_CLEARANCE,GOAL_WALL_CLEARANCE
 
 ROOT=Path.home()/'CAS_sim_ws/generated_map'
 REPO=Path(__file__).resolve().parents[3]
@@ -40,9 +40,14 @@ class MapProfileTests(unittest.TestCase):
         self.assertIs(self.candidates['coordinates_confirmed'],False)
         self.assertEqual(self.candidates['map_sha256'],self.spec.digest)
         clearance=distance_transform_edt(np.pad(self.allowed,1))[1:-1,1:-1]*self.spec.resolution
+        wall_clearance=distance_transform_edt(~self.occupied)*self.spec.resolution
         center=np.array(self.candidates['shared_zone']['center'])
-        for point in self.candidates['points'].values():
+        for name,point in self.candidates['points'].items():
             start=np.array([point['x'],point['y']])
+            if name in ('A','B'):
+                col,row=point['pixel']
+                self.assertGreaterEqual(clearance[row,col],GOAL_CLEARANCE)
+                self.assertGreaterEqual(wall_clearance[row,col],GOAL_WALL_CLEARANCE)
             for t in np.linspace(0,1,2001):
                 u,v=self.spec.world_to_image(*(start+(center-start)*t));col,row=int(u),int(v)
                 self.assertGreaterEqual(clearance[row,col],RADIUS)

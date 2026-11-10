@@ -23,6 +23,10 @@ def load_bundle(folder):
         expected={f'{robot}/{leg}' for robot in ['robot_1','robot_2'] for leg in ['approach','crossing','departure']}
         if set(bundle.get('checks',{}))!=expected or not all(v.get('passed') for v in bundle['checks'].values()):continue
         mission=bundle['mission_routes']
+        if not all(math.dist(mission.get(r,{}).get('start',[math.inf,math.inf]),[scenario['points'][s]['x'],scenario['points'][s]['y']])<=.05
+                   and math.dist(mission.get(r,{}).get('goal',[math.inf,math.inf]),[scenario['points'][t]['x'],scenario['points'][t]['y']])<=.04
+                   for r,s,t in [('robot_1','1','B'),('robot_2','2','A')]):
+            continue
         for robot,route in mission.items():
             for leg in route['segments']:
                 actual=audit(leg['path'],spec,allowed,scenario['shared_zone']['polygon'],.10)
