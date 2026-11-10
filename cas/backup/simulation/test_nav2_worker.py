@@ -1,13 +1,15 @@
 """Adapter checks without starting ROS nodes or sending any action goals."""
 import ast
+from collections import deque
 import inspect
 import math
 from concurrent.futures import Future
 from types import SimpleNamespace
 import unittest
-from nav2_worker import Nav2Worker, make_goal, source_valid
+from nav2_worker import Nav2Worker, make_goal, source_valid, matching_odom
 from rclpy.node import Node
 from action_msgs.msg import GoalStatus
+from builtin_interfaces.msg import Time as Stamp
 
 
 class WorkerTests(unittest.TestCase):
@@ -78,6 +80,35 @@ class WorkerTests(unittest.TestCase):
         future=Future();future.set_result(None)
         Nav2Worker.completed(fake,7,future)
         self.assertEqual(values,[])
+
+    def test_tf_lag_uses_matching_buffered_odom_without_refreshing_age(self):
+        old,new=object(),object()
+        pending=[(old,10.0,20.0),(new,10.2,20.22)]
+        self.assertEqual(matching_odom(pending,20.0,20.24,19.9,10.24),(old,10.0,20.0))
+        self.assertIsNone(matching_odom(pending,20.0,20.24,20.0,10.24))
+        self.assertIsNone(matching_odom(pending,20.22,21.0,19.9,11.0))
+
+    def test_poll_uses_original_receipt_time_for_matched_odom(self):
+        S=SimpleNamespace
+        def odom(nanosec):
+            return S(header=S(stamp=Stamp(sec=20,nanosec=nanosec)),
+                     twist=S(twist=S(linear=S(x=0.,y=0.),angular=S(z=0.))))
+        old,new=odom(0),odom(220000000)
+        transform=S(header=S(stamp=S(sec=20,nanosec=0)),
+                    transform=S(translation=S(x=1.,y=2.),rotation=S(x=0.,y=0.,z=0.,w=1.)))
+        reports=[]
+        def observation(*args):reports.append(args);return True
+        fake=S(active=None,odom=new,source=19.9,robot='robot_1',
+               pending_odom=deque([(old,10.,20.),(new,10.2,20.22)]),
+               get_clock=lambda:S(now=lambda:S(nanoseconds=20240000000)),
+               buffer=S(lookup_transform=lambda *args:transform),
+               coordinator=S(observation=observation))
+        Nav2Worker.poll(fake,10.24)
+        self.assertEqual(reports[0][2:4],(20.,10.))
+        self.assertEqual(fake.source,20.)
+        self.assertEqual(len(fake.pending_odom),1)
+        Nav2Worker.poll(fake,10.25)
+        self.assertEqual(len(reports),1)
 
     def test_invalid_path_or_spin_rejected(self):
         for command in [dict(kind='FOLLOW_PATH',target=[[0,0]]),

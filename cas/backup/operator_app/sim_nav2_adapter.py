@@ -423,17 +423,17 @@ class SimNav2Adapter:
                 task_state = 'FAILED'
             else:
                 task_state = 'RUNNING'
-            stopped = r['stopped_since'] is not None and (now - r['stopped_since']) >= 0.3
-            pos = [round(r['pose'][0], 3), round(r['pose'][1], 3)] if r['pose'] is not None else [0.0, 0.0]
+            stopped = st['observation_fresh'] and r['stopped_since'] is not None and (now - r['stopped_since']) >= 0.3
+            pos = [round(r['pose'][0], 3), round(r['pose'][1], 3)] if r['pose'] is not None else None
             robots_out.append(
                 dict(
                     id=name,
                     destination=self.mission[name]['destination'],
                     task_state=task_state,
                     phase=PHASE_MAP.get(raw_phase, raw_phase),
-                    position=pos,
+                    position=pos,pose_valid=bool(st['observation_fresh'] and pos is not None),
                     yaw=round(float(st.get('yaw', 0.0)), 3),
-                    pose_age_s=round(float(st['pose_age_s']), 2) if st['pose_age_s'] is not None else 99.9,
+                    pose_age_s=round(float(st['pose_age_s']), 2) if st['pose_age_s'] is not None else None,
                     connection='SIM_NAV2_OK' if (st['observation_fresh'] and st['follow_path'] and st['spin']) else 'SIM_NAV2_WAIT',
                     battery_percent=None,
                     stopped_confirmed=bool(stopped),

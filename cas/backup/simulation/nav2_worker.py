@@ -1,5 +1,6 @@
 """PC-side per-robot Nav2 adapter. Default is read-only; no cmd_vel publisher."""
 import math
+from collections import deque
 import json
 from pathlib import Path
 import time
@@ -51,6 +52,14 @@ def source_valid(stamp,clock,previous):
     return all(math.isfinite(v) for v in [stamp,clock]) and stamp>previous and -.05<=clock-stamp<=.5
 
 
+def matching_odom(pending,latest_tf,clock,previous,now):
+    """Pick the newest real observation with matching available TF and original age."""
+    for msg,received,stamp in reversed(pending):
+        if stamp<=latest_tf+1e-9 and 0<=now-received<=.5 and source_valid(stamp,clock,previous):
+            return msg,received,stamp
+    return None
+
+
 class Nav2Worker(Node):
     def __init__(self,robot,coordinator,allow_actions=False):
         if robot not in ['robot_1','robot_2']:raise ValueError('Unknown robot')
@@ -63,6 +72,7 @@ class Nav2Worker(Node):
                       'SPIN':ActionClient(self,Spin,f'/{robot}/spin')}
         self.subscription=self.create_subscription(Odometry,f'/{robot}/odom',self.odom_callback,qos_profile_sensor_data)
         self.odom=None;self.received=-math.inf;self.source=-math.inf;self.velocity=None;self.yaw=0.0
+        self.pending_odom=deque(maxlen=100)
         self.active=None;self.goal_handle=None;self.cancel_requested=False;self.deadline=0.0
         self.odom_count=0;self.reject_count=0;self.last_clock_delta=None
         self.last_error='Waiting for odometry / TF'
@@ -91,17 +101,20 @@ class Nav2Worker(Node):
             self.last_error=f'Odom stamp rejected: clock-stamp={clock-stamp:.3f}s, previous={old:.3f}, stamp={stamp:.3f}'
             return
         self.odom=msg;self.received=time.monotonic()
+        self.pending_odom.append((msg,self.received,stamp))
 
     def poll(self,now):
         if self.active is not None and now>self.deadline and not self.cancel_requested:
             self.coordinator.halt('Worker action timeout: '+self.robot)
             self.cancel()
         if self.odom is None:return
-        msg=self.odom;stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
-        if stamp<=self.source or now-self.received>.5:return
         clock=self.get_clock().now().nanoseconds/1e9
-        if not source_valid(stamp,clock,self.source):return
         try:
+            latest=self.buffer.lookup_transform('map',f'{self.robot}/base_footprint',Time())
+            tf_stamp=latest.header.stamp.sec+latest.header.stamp.nanosec/1e9
+            observation=matching_odom(self.pending_odom,tf_stamp,clock,self.source,now)
+            if observation is None:return
+            msg,received,stamp=observation
             tf=self.buffer.lookup_transform('map',f'{self.robot}/base_footprint',Time.from_msg(msg.header.stamp))
         except Exception as error:
             self.last_error=str(error);return
@@ -110,8 +123,9 @@ class Nav2Worker(Node):
         pose=[tf.transform.translation.x,tf.transform.translation.y]
         q=tf.transform.rotation
         yaw=math.atan2(2.0*(q.w*q.z+q.x*q.y),1.0-2.0*(q.y*q.y+q.z*q.z))
-        if self.coordinator.observation(self.robot,pose,stamp,self.received,linear,angular):
+        if self.coordinator.observation(self.robot,pose,stamp,received,linear,angular):
             self.source=stamp;self.velocity=[linear,angular];self.yaw=yaw;self.last_error=None
+            while self.pending_odom and self.pending_odom[0][2]<=stamp:self.pending_odom.popleft()
 
     def submit(self,command):
         if command['robot']!=self.robot:raise ValueError('Wrong-robot command rejected')

@@ -111,3 +111,12 @@ PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B ~/CAS/cas/backup/simulation/test_z
 
 원본 런타임 로그는 `~/CAS_sim_ws/generated_map/mission_logs/`와
 `~/CAS_sim_ws/ros_logs/`에 있습니다. 비밀번호, 인증 토큰, 지도 원본은 이 인계에 포함하지 않습니다.
+
+## GUI 위치 수신·안내 흔들림 후속 수정
+
+- TF가 odom보다 약 0.22초 늦을 때 최신 odom 하나만 계속 덮어쓰면 동일 시각 TF를
+  조회할 기회를 놓쳤습니다. 제한된 대기 큐에서 최신 공통 TF 시각과 일치하는 관측을 선택합니다.
+- 관측의 원래 source/receipt 시각과 0.5초 유효 범위를 유지합니다. 재전송/캐시로 freshness를 갱신하지 않습니다.
+- 상단 안내 높이를 고정하고 긴 원문 오류는 툴팁으로 이동했습니다.
+- 미수신 좌표는 None/미수신, 오래된 관측의 정지는 미확인으로 표시하며 유효하지 않은 위치 마커는 그리지 않습니다.
+- Worker 11건 + operator HTTP/화면 없는 GUI/어댑터 25건 통과. 실제 GUI는 재시작 후 확인이 필요합니다.

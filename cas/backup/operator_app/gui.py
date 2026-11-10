@@ -61,7 +61,7 @@ class Dashboard(QMainWindow):
         header.addWidget(title);header.addStretch();header.addWidget(self.mode);header.addWidget(self.connection)
         outer.addLayout(header)
         self.notice=QLabel('임시 가상 로봇 2대 · 작업 완료 후 A/B에 대기 · 실제 로봇을 움직이지 않습니다.')
-        self.notice.setWordWrap(True);outer.addWidget(self.notice)
+        self.notice.setWordWrap(True);self.notice.setFixedHeight(36);outer.addWidget(self.notice)
         middle=QHBoxLayout();outer.addLayout(middle,1)
         command=QGroupBox('작업 명령');command.setMaximumWidth(250);left=QVBoxLayout(command)
         intro=QLabel('등록 작업 선택\n이동 → 공유존 순차 통과 → 회전');intro.setWordWrap(True);left.addWidget(intro)
@@ -123,7 +123,9 @@ class Dashboard(QMainWindow):
         if sim_nav2:
             self.setWindowTitle('CAS | 독립 관제 · SIM_NAV2 (Gazebo 도메인 84)')
             self.mode.setText('SIM_NAV2 · 도메인 84 (실물 14/30 분리)')
-            self.notice.setText(state.get('preflight_reason') or 'Gazebo SIM_NAV2 연결 정상 · 검증 경로 추종 · 실물 명령 없음')
+            detail=state.get('preflight_reason') or 'Gazebo SIM_NAV2 연결 정상 · 검증 경로 추종 · 실물 명령 없음'
+            self.notice.setText(detail.split(' (')[0])
+            self.notice.setToolTip(detail)
             if state.get('map_review'):self.render_sim_map(state)
         else:
             self.notice.setText('MOCK 모드 · 임시 가상 맵 · 실물/센서/배터리 미연결 · 완료 후 목적지 대기')
@@ -132,7 +134,11 @@ class Dashboard(QMainWindow):
         for r in state['simulation']['robots']:
             reason='공유존 대기 — 다른 로봇 통과 중' if r['phase']=='WAITING_ZONE' else PHASE.get(r['phase'],r['phase'])
             conn='Gazebo Nav2 정상' if r.get('connection')=='SIM_NAV2_OK' else ('Gazebo 대기' if sim_nav2 else '모의 연결 정상')
-            self.cards[r['id']].setText(f"{conn} · 배터리: —\n작업: {r['destination']} 작업장\n결과: {STATES.get(r['task_state'],r['task_state'])}\n단계: {reason}\n위치: {r['position']} m ({tag})\n위치 갱신: {r['pose_age_s']:.2f}초 전\n정지: {'확인('+tag+')' if r['stopped_confirmed'] else '이동/작업 중'}")
+            fresh=not sim_nav2 or r.get('pose_valid',r.get('connection')=='SIM_NAV2_OK')
+            position='미수신' if r.get('position') is None else f"{r['position']} m ({tag})"+(' · 마지막 수신' if not fresh else '')
+            age='미수신' if r.get('pose_age_s') is None else f"{r['pose_age_s']:.2f}초 전"
+            stop='미확인' if not fresh else ('확인('+tag+')' if r['stopped_confirmed'] else '이동/작업 중')
+            self.cards[r['id']].setText(f"{conn} · 배터리: —\n작업: {r['destination']} 작업장\n결과: {STATES.get(r['task_state'],r['task_state'])}\n단계: {reason}\n위치: {position}\n위치 갱신: {age}\n정지: {stop}")
         z=state['zone'];join=lambda xs:', '.join(xs) if xs else '없음'
         self.zone.setText(f"진입권: {z['owner'] or '없음'}\n실제 {tag} 점유: {join(z['occupants'])}\n대기: {join(z['waiting'])}\n보류: {z['blocked_reason'] or '없음'}")
         for e in state['events']:

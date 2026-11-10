@@ -92,7 +92,7 @@ class ReceivedMapView(QWidget):
                 colors={'robot_1':'#2563eb','robot_2':'#d97706'}
                 for r in self.state.get('simulation',{}).get('robots',[]):
                     pos=r.get('position')
-                    if not pos or len(pos)!=2:continue
+                    if r.get('pose_valid') is False or not pos or len(pos)!=2:continue
                     center=screen(pos[0],pos[1]);color=QColor(colors.get(r['id'],'#2563eb'))
                     p.setPen(QPen(Qt.white,2));p.setBrush(color);p.drawEllipse(center,10,10)
                     angle=float(r.get('yaw',0.0))

@@ -1,5 +1,6 @@
 """Offscreen Qt/HTTP integration. Does not open the user's desktop or connect ROS."""
 import os
+import copy
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from pathlib import Path
 import threading
@@ -25,6 +26,20 @@ class GuiTests(unittest.TestCase):
         try:
             pump_until(lambda:window.connected)
             self.assertTrue(window.task_buttons['scenario'].isEnabled())
+            ready=copy.deepcopy(window.state)
+            missing=copy.deepcopy(ready)
+            missing.update(preflight_ready=False,commands_locked=True,
+                           preflight_reason='robot_1 위치 수신 대기 중 (Lookup would require extrapolation into the future)')
+            missing['simulation']['robots'][0].update(position=None,pose_valid=False,pose_age_s=None,
+                                                       connection='SIM_NAV2_WAIT',stopped_confirmed=False)
+            height=window.notice.height()
+            window.render(missing);app.processEvents()
+            self.assertEqual(window.notice.height(),height)
+            self.assertNotIn('Lookup',window.notice.text())
+            self.assertIn('Lookup',window.notice.toolTip())
+            self.assertIn('위치: 미수신',window.cards['robot_1'].text())
+            self.assertIn('정지: 미확인',window.cards['robot_1'].text())
+            window.render(ready);app.processEvents()
             window.task_buttons['scenario'].click()
             pump_until(lambda:service.snapshot()['active'])
             # Fast forward mock state to waiting/crossing then render real HTTP snapshot.
