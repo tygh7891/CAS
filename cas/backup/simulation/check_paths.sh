@@ -6,4 +6,4 @@ unset ROS_STATIC_PEERS ROS_DISCOVERY_SERVER ROS_AUTOMATIC_DISCOVERY_RANGE FASTRT
 set +u
 source /opt/ros/jazzy/setup.bash
 set -u
-exec /usr/bin/python3 "$SCRIPT_DIR/check_paths.py"
+exec /usr/bin/python3 "$SCRIPT_DIR/check_paths.py" "$@"
