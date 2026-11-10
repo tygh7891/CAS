@@ -40,6 +40,7 @@ def main():
                 clients[index] = (name, client, client.call_async(GetState.Request()))
             elif future is not None and future.done():
                 checks[name] = future.result().current_state.id == 3
+                clients[index] = (name, client, None)
     for name, _, _ in clients:
         checks.setdefault(name, False)
     for name, client in actions:

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -108,9 +108,14 @@ def setup(context):
                            ('cmd_vel_smoothed', f'/{robot}/nav2_preview_cmd_vel')]
             actions.append(Node(package=package, executable=executable, namespace=robot,
                                 name=name, parameters=[str(params)], remappings=remaps, output='screen'))
-        actions.append(Node(package='nav2_lifecycle_manager', executable='lifecycle_manager',
-                            namespace=robot, name='lifecycle_manager_preview', output='screen',
-                            parameters=[dict(use_sim_time=True, autostart=True, node_names=list(executables))]))
+        localization=['map_server','keepout_mask_server','costmap_filter_info_server','amcl']
+        for group, names, autostart in [('localization',localization,True),
+                                        ('navigation',[n for n in executables if n not in localization],False)]:
+            actions.append(Node(package='nav2_lifecycle_manager',executable='lifecycle_manager',
+                                namespace=robot,name='lifecycle_manager_'+group,output='screen',
+                                parameters=[dict(use_sim_time=True,autostart=autostart,node_names=names)]))
+        actions.append(ExecuteProcess(cmd=['/usr/bin/python3',str(Path(__file__).with_name('activate_navigation.py')),
+                                           '--robot',robot],output='screen'))
     print('CAS B3: PREVIEW ONLY. Velocity output disconnected from Gazebo. No goals sent.')
     return actions
 
