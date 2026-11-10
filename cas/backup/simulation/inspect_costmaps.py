@@ -6,6 +6,8 @@ import time
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PolygonStamped
+from rcl_interfaces.srv import GetParameters
 from rclpy.qos import QoSProfile,DurabilityPolicy
 from rclpy.time import Time
 from nav2_worker import Nav2Worker
@@ -31,16 +33,22 @@ def sample(grid,transform,point):
 def main():
     scenario,mission,report=load_bundle(Path.home()/'CAS_sim_ws/generated_map')
     coordinator=MissionCoordinator(mission,scenario['shared_zone']['polygon'])
-    rclpy.init();executor=SingleThreadedExecutor();workers={};grids={};subscriptions=[]
+    rclpy.init();executor=SingleThreadedExecutor();workers={};grids={};footprints={};subscriptions=[];parameter_clients={};parameter_futures={}
     for robot in ['robot_1','robot_2']:
         worker=Nav2Worker(robot,coordinator);workers[robot]=worker;executor.add_node(worker)
+        parameter_clients[robot]=worker.create_client(GetParameters,f'/{robot}/local_costmap/local_costmap/get_parameters')
+        subscriptions.append(worker.create_subscription(PolygonStamped,f'/{robot}/local_costmap/published_footprint',lambda msg,name=robot:footprints.update({name:msg}),1))
         subscriptions.append(worker.create_subscription(OccupancyGrid,f'/{robot}/local_costmap/costmap',
             lambda msg,name=robot:grids.update({name:msg}),QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)))
     try:
         deadline=time.monotonic()+12
         while time.monotonic()<deadline:
             executor.spin_once(timeout_sec=.02)
-            for worker in workers.values():worker.poll(time.monotonic())
+            for robot,worker in workers.items():
+                worker.poll(time.monotonic())
+                if robot not in parameter_futures and parameter_clients[robot].service_is_ready():
+                    request=GetParameters.Request();request.names=['robot_radius','footprint_padding']
+                    parameter_futures[robot]=parameter_clients[robot].call_async(request)
         results={}
         for robot,worker in workers.items():
             grid=grids.get(robot)
@@ -53,7 +61,20 @@ def main():
                     if distance>.20:break
                     if i%3==0:samples.append(dict(distance_m=distance,point=point,cost=sample(grid,transform,point)))
                 pose=coordinator.robots[robot]['pose']
-                results[robot]=dict(frame=grid.header.frame_id,resolution=grid.info.resolution,
+                footprint=footprints.get(robot);body={}
+                if footprint is not None:
+                    body_transform=worker.buffer.lookup_transform(grid.header.frame_id,footprint.header.frame_id,Time())
+                    base=worker.buffer.lookup_transform(footprint.header.frame_id,f'{robot}/base_footprint',Time())
+                    points=footprint.polygon.points
+                    costs=[sample(grid,body_transform,[p.x,p.y]) for p in points]
+                    body=dict(frame=footprint.header.frame_id,vertices=len(points),
+                              max_radius_m=max(math.hypot(p.x-base.transform.translation.x,p.y-base.transform.translation.y) for p in points),
+                              vertex_costs=costs)
+                parameters={}
+                future=parameter_futures.get(robot)
+                if future is not None and future.done():
+                    parameters={name:value.double_value for name,value in zip(['robot_radius','footprint_padding'],future.result().values)}
+                results[robot]=dict(applied_parameters=parameters,published_body=body,frame=grid.header.frame_id,resolution=grid.info.resolution,
                                     pose=pose,pose_cost=sample(grid,transform,pose) if pose else None,
                                     approach_first_20cm=samples)
             except Exception as error:results[robot]=dict(error=str(error))
