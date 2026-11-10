@@ -25,6 +25,16 @@ class PathGeometryTests(unittest.TestCase):
         self.assertTrue(result['center_in_allowed_lane'])
         self.assertFalse(result['footprint_clear'])
 
+    def test_exact_cell_edge_distance_preserves_required_margin(self):
+        allowed = np.ones((100,100), dtype=bool)
+        allowed[:40] = False  # blocked region ends exactly at y=.40
+        polygon = [[.4,.4],[.6,.4],[.6,.6],[.4,.6]]
+        safe = audit([(.3,.511),(.7,.511)], Spec(), allowed, polygon, .10)
+        self.assertAlmostEqual(safe['min_sample_clearance_m'], .111)
+        self.assertTrue(safe['footprint_clear'])
+        touching = audit([(.3,.50),(.7,.50)], Spec(), allowed, polygon, .10)
+        self.assertFalse(touching['footprint_clear'])
+
     def test_safe_route_and_zone_bypass_are_distinguished(self):
         allowed = np.ones((100,100), dtype=bool)
         zone = [[.4,.4],[.6,.4],[.6,.6],[.4,.6]]

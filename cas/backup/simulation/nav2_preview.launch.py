@@ -46,7 +46,7 @@ def configuration(folder, robot):
                           cost_scaling_dist=0.10, inflation_cost_scaling_factor=15.0)
     p('planner_server').update(planner_plugins=['GridBased'])
     p('planner_server')['GridBased'] = dict(plugin='nav2_navfn_planner::NavfnPlanner', tolerance=0.03,
-                                           use_astar=True, allow_unknown=False)
+                                           use_astar=False, allow_unknown=False)
     p('behavior_server').update(local_frame=f'{robot}/odom', robot_base_frame=f'{robot}/base_footprint',
                                 max_rotational_vel=0.4, min_rotational_vel=0.1,
                                 behavior_plugins=['spin', 'backup', 'drive_on_heading', 'wait'])

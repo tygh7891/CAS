@@ -1,7 +1,7 @@
 """Conservative raster footprint audit; checks every segment, not only vertices."""
 import math
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.spatial import cKDTree
 
 
 def inside(point, polygon):
@@ -18,11 +18,11 @@ def inside(point, polygon):
 def audit(points, spec, allowed, polygon, radius):
     if not points or not all(math.isfinite(v) for p in points for v in p):
         raise ValueError('Empty or nonfinite path')
-    # EDT measures cell-center distance. Subtract cell uncertainty at both ends
-    # and half the maximum sample step to conservatively cover whole segments.
+    # Pixel cells are closed rectangles, not point obstacles at their centers.
+    # Include a blocked border so map edges are also excluded.
+    blocked = np.argwhere(~np.pad(allowed, 1, constant_values=False))[:, ::-1] - .5
+    tree = cKDTree(blocked)
     step = spec.resolution / 4
-    field = distance_transform_edt(np.pad(allowed, 1, constant_values=False))[1:-1, 1:-1] * spec.resolution
-    margin = math.sqrt(2)*spec.resolution + step/2
     samples = [points[0]]
     length = 0.0
     for a, b in zip(points, points[1:]):
@@ -41,9 +41,17 @@ def audit(points, spec, allowed, polygon, radius):
             minimum = 0.0
         else:
             center_allowed = center_allowed and bool(allowed[row, col])
-            minimum = min(minimum, max(0.0, float(field[row, col])-margin))
+            query = np.array([u,v])
+            nearest, _ = tree.query(query)
+            # Any cell farther than nearest center + half diagonal cannot win.
+            candidates = blocked[tree.query_ball_point(query, nearest+math.sqrt(.5)+1e-9)]
+            distances = np.linalg.norm(np.maximum(np.abs(candidates-query)-.5, 0), axis=1)
+            clearance = float(distances.min())*spec.resolution
+            minimum = min(minimum, clearance)
         crosses = crosses or inside(point, polygon)
+    # Distance to a closed obstacle set is 1-Lipschitz: cover unsampled gaps.
+    lower_bound = max(0.0, minimum-step/2)
     return dict(length_m=length, vertices=len(points), samples=len(samples),
                 center_in_allowed_lane=center_allowed,
-                min_clearance_lower_bound_m=minimum, required_radius_m=radius,
-                footprint_clear=minimum >= radius, shared_zone_crossed=crosses)
+                min_sample_clearance_m=minimum, min_clearance_lower_bound_m=lower_bound, required_radius_m=radius,
+                footprint_clear=lower_bound >= radius, shared_zone_crossed=crosses)
