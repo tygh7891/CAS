@@ -11,7 +11,7 @@
 | `backup_server/` | A3 내장 가상 주행·공유존 순차 통과·회전 완료, 선택적 실물 1번 상태 수신 | 실물 읽기 전용 |
 | `proposals/cmd_timeout/` | 1번 자동 정지 수정안·패치·검사 | 적용·실물 시험 파일은 수동 실행 시 영향 있음 |
 
-A2 모의 연결과 A3 정상 상태 흐름은 사용자 터미널 실행으로 확인했습니다. A3는 A2 Action 서버를 호출하지 않는 독립 모의 구현입니다. A4 예외 상황 보완·GUI·HTTP 서버·실물 Nav2 연동은 아직 미완료입니다. 작업 완료 후 출발점 복귀는 2차 범위입니다.
+A2 모의 연결과 A3 정상 상태 흐름은 사용자 터미널 실행으로 확인했습니다. A3는 A2 Action 서버를 호출하지 않는 독립 모의 구현입니다. A4 공유존 예외 모의 검사 12개를 추가했습니다. GUI·HTTP 서버·실물 Nav2 연동은 아직 미완료입니다. 작업 완료 후 출발점 복귀는 2차 범위입니다.
 
 ## PC 터미널 — A3 데모
 
@@ -26,6 +26,7 @@ python3 ~/CAS/cas/backup/backup_server/run_demo.py --live-robot1
 
 ```bash
 python3 ~/CAS/cas/backup/backup_server/test_engine.py
+python3 ~/CAS/cas/backup/backup_server/test_zone_cases.py
 python3 ~/CAS/cas/backup/proposals/cmd_timeout/test_timeout.py
 ```
 
