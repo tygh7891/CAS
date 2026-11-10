@@ -55,8 +55,8 @@ class WorkerTests(unittest.TestCase):
                                       (GoalStatus.STATUS_ABORTED,0,False),
                                       (GoalStatus.STATUS_SUCCEEDED,106,False)]:
             values=[]
-            fake=SimpleNamespace(finish=lambda *a:values.append(a))
-            future=Future();future.set_result(SimpleNamespace(status=status,result=SimpleNamespace(error_code=code)))
+            fake=SimpleNamespace(finish=lambda *a:values.append(a),get_logger=lambda:SimpleNamespace(error=lambda message:None))
+            future=Future();future.set_result(SimpleNamespace(status=status,result=SimpleNamespace(error_code=code,error_msg='test')))
             Nav2Worker.completed(fake,7,future)
             self.assertEqual(values,[(7,expected)])
 

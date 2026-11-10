@@ -133,6 +133,9 @@ class Nav2Worker(Node):
         try:
             response=future.result()
             success=response.status==GoalStatus.STATUS_SUCCEEDED and response.result.error_code==0
+            if not success:
+                self.last_error=f'Nav2 status={response.status}, code={response.result.error_code}: {response.result.error_msg}'
+                self.get_logger().error(self.last_error)
             self.finish(command_id,success)
         except Exception as error:
             self.last_error=str(error);self.finish(command_id,False)
