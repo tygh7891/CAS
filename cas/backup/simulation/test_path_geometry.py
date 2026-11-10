@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from path_geometry import audit
+from path_geometry import audit, ClearanceMap
 
 
 class Spec:
@@ -31,6 +31,7 @@ class PathGeometryTests(unittest.TestCase):
         polygon = [[.4,.4],[.6,.4],[.6,.6],[.4,.6]]
         safe = audit([(.3,.511),(.7,.511)], Spec(), allowed, polygon, .10)
         self.assertAlmostEqual(safe['min_sample_clearance_m'], .111)
+        self.assertAlmostEqual(ClearanceMap(Spec(),allowed).distance([.5,.511]), .111)
         self.assertTrue(safe['footprint_clear'])
         touching = audit([(.3,.50),(.7,.50)], Spec(), allowed, polygon, .10)
         self.assertFalse(touching['footprint_clear'])

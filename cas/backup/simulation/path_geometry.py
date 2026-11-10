@@ -15,6 +15,21 @@ def inside(point, polygon):
     return result
 
 
+class ClearanceMap:
+    def __init__(self,spec,allowed):
+        self.spec,self.allowed=spec,allowed
+        self.blocked=np.argwhere(~np.pad(allowed,1,constant_values=False))[:,::-1]-.5
+        self.tree=cKDTree(self.blocked)
+
+    def distance(self,point):
+        u,v=self.spec.world_to_image(*point)
+        col,row=math.floor(u),math.floor(v)
+        if not (0<=row<self.allowed.shape[0] and 0<=col<self.allowed.shape[1]) or not self.allowed[row,col]:return 0.0
+        query=np.array([u,v]);nearest,_=self.tree.query(query)
+        candidates=self.blocked[self.tree.query_ball_point(query,nearest+math.sqrt(.5)+1e-9)]
+        return float(np.linalg.norm(np.maximum(np.abs(candidates-query)-.5,0),axis=1).min())*self.spec.resolution
+
+
 def audit(points, spec, allowed, polygon, radius):
     if not points or not all(math.isfinite(v) for p in points for v in p):
         raise ValueError('Empty or nonfinite path')
