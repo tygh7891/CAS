@@ -4,6 +4,7 @@ import fcntl
 import json
 import math
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -85,7 +86,7 @@ def main():
         until=time.monotonic()+2
         while time.monotonic()<until:spin_once()
         if any(control.count_publishers(f'/{robot}/cmd_vel') for robot in ROBOTS):
-            raise RuntimeError('Existing cmd_vel publisher: stop other simulator control / relay first')
+            raise RuntimeError('Existing cmd_vel publishers: '+json.dumps({robot:[info.node_namespace.rstrip('/')+'/'+info.node_name for info in control.get_publishers_info_by_topic(f'/{robot}/cmd_vel')] for robot in ROBOTS}))
         relay=subprocess.Popen([sys.executable,str(Path(__file__).with_name('sim_velocity_relay.py')),'--session',session],start_new_session=True)
         deadline=time.monotonic()+25;stable=None
         while time.monotonic()<deadline:
@@ -103,7 +104,7 @@ def main():
                 if stable is None:stable=now
                 if now-stable>=1:break
             else:stable=None
-        else:raise RuntimeError('Preflight did not become ready: '+json.dumps(statuses))
+        else:raise RuntimeError('Preflight did not become ready: '+json.dumps(dict(workers=statuses,relay=relay_state,active_actions=external_actions)))
         coordinator.start();started=True
         log('MISSION_STARTED',sequence='wait -> permission -> exit -> destination -> spin -> stopped')
         deadline=time.monotonic()+600
@@ -150,25 +151,29 @@ def main():
         coordinator.halt(failure)
         log('HALTED',reason=failure,owner_retained=coordinator.owner)
     finally:
-        # Leave relay alive while sending empty leases and waiting for zero odom.
-        if rclpy.ok():
-            for worker in workers.values():worker.cancel()
-            until=time.monotonic()+2;stopped=False
-            while time.monotonic()<until:
-                now=spin_once();heartbeat({})
-                stopped=all(w.velocity is not None and abs(w.velocity[0])<=.005 and abs(w.velocity[1])<=.03
-                            and now-coordinator.robots[w.robot]['received']<.5 for w in workers.values())
-            log('FINAL_STOP',confirmed=stopped,mission_success=success,reason=failure)
-            if not stopped:success=False
-        else:success=False
-        if relay is not None:
-            relay.terminate()
-            try:relay.wait(timeout=3)
-            except subprocess.TimeoutExpired:relay.kill();relay.wait()
-        for worker in workers.values():executor.remove_node(worker);worker.destroy_node()
-        executor.shutdown()
-        if rclpy.ok():rclpy.shutdown()
-        stream.close();lock.close()
+        # A second Ctrl+C must not interrupt the bounded stop/relay cleanup.
+        signal.signal(signal.SIGINT,signal.SIG_IGN)
+        try:
+            # Leave relay alive while sending empty leases and waiting for zero odom.
+            if rclpy.ok():
+                for worker in workers.values():worker.cancel()
+                until=time.monotonic()+2;stopped=False
+                while time.monotonic()<until:
+                    now=spin_once();heartbeat({})
+                    stopped=all(w.velocity is not None and abs(w.velocity[0])<=.005 and abs(w.velocity[1])<=.03
+                                and now-coordinator.robots[w.robot]['received']<.5 for w in workers.values())
+                log('FINAL_STOP',confirmed=stopped,mission_success=success,reason=failure)
+                if not stopped:success=False
+            else:success=False
+        finally:
+            if relay is not None:
+                relay.terminate()
+                try:relay.wait(timeout=3)
+                except subprocess.TimeoutExpired:relay.kill();relay.wait()
+            for worker in workers.values():executor.remove_node(worker);worker.destroy_node()
+            executor.shutdown()
+            if rclpy.ok():rclpy.shutdown()
+            stream.close();lock.close()
     print(('MISSION PASSED' if success else 'MISSION STOPPED / NOT COMPLETE')+' | '+str(logfile),flush=True)
     return 0 if success else 1
 
