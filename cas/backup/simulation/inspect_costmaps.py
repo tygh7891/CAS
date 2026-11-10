@@ -1,4 +1,5 @@
 """Read-only costmap samples along the start of verified approach paths."""
+import argparse
 import json
 import math
 from pathlib import Path
@@ -31,6 +32,7 @@ def sample(grid,transform,point):
 
 
 def main():
+    parser=argparse.ArgumentParser();parser.add_argument('--rotation-only',action='store_true');args=parser.parse_args()
     scenario,mission,report=load_bundle(Path.home()/'CAS_sim_ws/generated_map')
     coordinator=MissionCoordinator(mission,scenario['shared_zone']['polygon'])
     rclpy.init();executor=SingleThreadedExecutor();workers={};grids={};footprints={};subscriptions=[];parameter_clients={};parameter_futures={}
@@ -70,6 +72,24 @@ def main():
                     body=dict(frame=footprint.header.frame_id,vertices=len(points),
                               max_radius_m=max(math.hypot(p.x-base.transform.translation.x,p.y-base.transform.translation.y) for p in points),
                               vertex_costs=costs)
+                    bx,by=base.transform.translation.x,base.transform.translation.y
+                    bad_angles=[];unknown_angles=[];maximum=-1
+                    for degrees in range(0,360,5):
+                        angle=math.radians(degrees);c,s=math.cos(angle),math.sin(angle)
+                        rotated=[[bx+c*(p.x-bx)-s*(p.y-by),by+s*(p.x-bx)+c*(p.y-by)] for p in points]
+                        edge_costs=[]
+                        for a,b in zip(rotated,rotated[1:]+rotated[:1]):
+                            count=max(1,math.ceil(math.dist(a,b)/(grid.info.resolution/2)))
+                            for index in range(count+1):
+                                point=[a[k]+(b[k]-a[k])*index/count for k in [0,1]]
+                                edge_costs.append(sample(grid,body_transform,point))
+                        known=[value for value in edge_costs if value is not None and value>=0]
+                        if known:maximum=max(maximum,max(known))
+                        if any(value==100 for value in edge_costs):bad_angles.append(degrees)
+                        if any(value is None or value<0 for value in edge_costs):unknown_angles.append(degrees)
+                    body['rotation_snapshot']=dict(step_degrees=5,max_edge_cost=maximum,
+                        lethal_relative_angles=bad_angles,unknown_relative_angles=unknown_angles,
+                        note='Static snapshot at current center; no motion or future drift prediction')
                 parameters={}
                 future=parameter_futures.get(robot)
                 if future is not None and future.done():
@@ -79,6 +99,8 @@ def main():
                                     approach_first_20cm=samples)
             except Exception as error:results[robot]=dict(error=str(error))
         payload=dict(source_report=report,cost_legend='0 free; 99 inscribed; 100 lethal; -1 unknown',robots=results)
+        if args.rotation_only:
+            for value in results.values():value.pop('approach_first_20cm',None)
         output=Path.home()/'CAS_sim_ws/generated_map/costmap_diagnostic.json'
         output.write_text(json.dumps(payload,indent=2))
         print(json.dumps(payload,indent=2));print('READ ONLY — NO GOALS SENT | '+str(output))

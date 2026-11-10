@@ -7,6 +7,10 @@ import math
 from mission_routes import zone_distance
 
 
+def through_path(route):
+    return route['segments'][1]['path']+route['segments'][2]['path'][1:]
+
+
 class MissionCoordinator:
     def __init__(self, routes, polygon, radius=.10, timeout=1.0):
         self.routes, self.polygon, self.radius, self.timeout = routes, polygon, radius, timeout
@@ -61,7 +65,7 @@ class MissionCoordinator:
         r['stopped_since']=None
         if not success:
             self.halt('Action failed: '+name);return True
-        following={'TO_WAIT':'VERIFY_WAIT','CROSSING':'VERIFY_EXIT','TO_GOAL':'VERIFY_GOAL','SPINNING':'VERIFY_DONE'}
+        following={'TO_WAIT':'VERIFY_WAIT','CROSSING':'VERIFY_GOAL','TO_GOAL':'VERIFY_GOAL','SPINNING':'VERIFY_DONE'}
         if r['phase'] in following:r['phase']=following[r['phase']]
         return True
 
@@ -75,6 +79,15 @@ class MissionCoordinator:
             if overlap and self.owner!=name:
                 self.halt('Unpermitted zone entry: '+name);return
             if overlap:r['entered']=True
+            # Release while moving, only after observed entry and goal-side exit.
+            center=[sum(p[i] for p in self.polygon)/len(self.polygon) for i in range(2)]
+            goal=self.routes[name]['goal']
+            goal_side=sum((r['pose'][i]-center[i])*(goal[i]-center[i]) for i in range(2))>0
+            if (self.owner==name and r['entered'] and goal_side
+                    and zone_distance(r['pose'],self.polygon)>self.radius+.02):
+                self.owner=None
+                self.emit(name,'ZONE_RELEASED')
+                if r['phase']=='CROSSING':r['phase']='TO_GOAL'
             stopped=r['stopped_since'] is not None and now-r['stopped_since']>=.3
             phase=r['phase']
             if phase=='VERIFY_WAIT' and stopped:
@@ -83,15 +96,9 @@ class MissionCoordinator:
                 r['phase']='WAITING'
                 if name not in self.queue:self.queue.append(name)
                 self.emit(name,'ZONE_REQUESTED')
-            elif phase=='VERIFY_EXIT' and stopped:
-                if overlap or not r['entered']:continue
-                if math.dist(r['pose'],self.routes[name]['exit'])>.02:
-                    self.halt('Invalid exit position: '+name);return
-                self.owner=None
-                self.emit(name,'ZONE_RELEASED')
-                r['phase']='TO_GOAL'
-                self.command(name,'FOLLOW_PATH',self.routes[name]['segments'][2]['path'])
             elif phase=='VERIFY_GOAL' and stopped:
+                if self.owner==name:
+                    self.halt('Destination reached without verified zone exit: '+name);return
                 if math.dist(r['pose'],self.routes[name]['goal'])>.02:
                     self.halt('Invalid destination: '+name);return
                 r['phase']='SPINNING'
@@ -105,4 +112,4 @@ class MissionCoordinator:
             r['phase']='CROSSING'
             r['entered']=False
             self.emit(self.owner,'ZONE_GRANTED')
-            self.command(self.owner,'FOLLOW_PATH',self.routes[self.owner]['segments'][1]['path'])
+            self.command(self.owner,'FOLLOW_PATH',through_path(self.routes[self.owner]))

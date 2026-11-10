@@ -40,23 +40,32 @@ class CoordinatorTests(unittest.TestCase):
         for _ in range(6):self.observe({'robot_1':[0,0]})
         self.assertEqual(self.c.owner,'robot_1')
 
-    def test_confirmed_exit_hands_off_then_completion_requires_stop(self):
+    def test_moving_exit_releases_without_new_goal_or_stop(self):
         self.ready()
+        r=self.c.robots['robot_1'];command_id=r['pending']
+        path=self.c.commands[-1]['target']
+        self.assertEqual(path[-1],ROUTES['robot_1']['goal'])
         self.observe({'robot_1':[0,0]},moving=True)
-        self.observe({'robot_1':[.4,-.05]},moving=True)
-        r=self.c.robots['robot_1']
-        self.c.result('robot_1',r['pending'],True)
-        for _ in range(6):self.observe()
-        self.assertEqual(self.c.owner,'robot_2')
+        before=len(self.c.commands)
+        self.observe({'robot_1':[.30,-.05]},moving=True)
         self.assertEqual(r['phase'],'TO_GOAL')
+        self.assertEqual(self.c.owner,'robot_2')
+        self.assertEqual(r['pending'],command_id)
+        self.assertEqual(len(self.c.commands),before+1) # only robot2 gets a new crossing command
         self.observe({'robot_1':[.8,-.05]},moving=True)
-        self.c.result('robot_1',r['pending'],True)
+        self.c.result('robot_1',command_id,True)
         for _ in range(6):self.observe()
         self.assertEqual(r['phase'],'SPINNING')
         self.c.result('robot_1',r['pending'],True)
         self.assertNotEqual(r['phase'],'DONE')
         for _ in range(6):self.observe()
         self.assertEqual(r['phase'],'DONE')
+
+    def test_backing_out_on_entry_side_does_not_release(self):
+        self.ready()
+        self.observe({'robot_1':[0,0]},moving=True)
+        self.observe({'robot_1':[-.3,-.05]},moving=True)
+        self.assertEqual(self.c.owner,'robot_1')
 
     def test_stale_pose_holds_owner_and_cancels_both(self):
         self.ready()

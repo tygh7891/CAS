@@ -18,7 +18,7 @@ from std_msgs.msg import String
 from action_msgs.msg import GoalStatusArray
 from check_workers import load_bundle
 from nav2_worker import Nav2Worker
-from zone_coordinator import MissionCoordinator
+from zone_coordinator import MissionCoordinator, through_path
 from prepare_map import arrays
 from path_geometry import ClearanceMap
 from velocity_gate import ROBOTS
@@ -135,8 +135,8 @@ def main():
                     if clearance.distance(r['pose'])<.10:coordinator.halt('Body clearance below 10cm: '+name)
                     phase=r['phase']
                     if phase in ['TO_WAIT','CROSSING','TO_GOAL']:
-                        index={'TO_WAIT':0,'CROSSING':1,'TO_GOAL':2}[phase]
-                        if path_distance(r['pose'],mission[name]['segments'][index]['path'])>.025:
+                        guard_path=mission[name]['segments'][0]['path'] if phase=='TO_WAIT' else through_path(mission[name])
+                        if path_distance(r['pose'],guard_path)>.025:
                             coordinator.halt('Tracking deviation exceeds 2.5cm: '+name)
                 poses=[coordinator.robots[name]['pose'] for name in ROBOTS]
                 if all(p is not None for p in poses) and math.dist(*poses)<.22:
