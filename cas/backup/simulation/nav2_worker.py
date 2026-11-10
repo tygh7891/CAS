@@ -58,10 +58,12 @@ class Nav2Worker(Node):
         self.subscription=self.create_subscription(Odometry,f'/{robot}/odom',self.odom_callback,qos_profile_sensor_data)
         self.odom=None;self.received=-math.inf;self.source=-math.inf;self.velocity=None
         self.active=None;self.goal_handle=None;self.cancel_requested=False;self.deadline=0.0
+        self.odom_count=0;self.reject_count=0;self.last_clock_delta=None
         self.last_error='Waiting for odometry / TF'
         self.feedback=None
 
     def odom_callback(self,msg):
+        self.odom_count+=1
         if msg.header.frame_id!=f'{self.robot}/odom' or msg.child_frame_id!=f'{self.robot}/base_footprint':
             self.last_error='Unexpected odom frame';return
         stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
@@ -70,7 +72,11 @@ class Nav2Worker(Node):
         if self.odom is not None:
             previous=self.odom.header.stamp
             old=max(old,previous.sec+previous.nanosec/1e9)
-        if not source_valid(stamp,clock,old):return
+        self.last_clock_delta=clock-stamp
+        if not source_valid(stamp,clock,old):
+            self.reject_count+=1
+            self.last_error=f'Odom stamp rejected: clock-stamp={clock-stamp:.3f}s, previous={old:.3f}, stamp={stamp:.3f}'
+            return
         self.odom=msg;self.received=time.monotonic()
 
     def poll(self,now):
@@ -146,4 +152,5 @@ class Nav2Worker(Node):
         return dict(robot=self.robot,follow_path=self.action_clients['FOLLOW_PATH'].server_is_ready(),
                     spin=self.action_clients['SPIN'].server_is_ready(),pose=r['pose'],pose_age_s=age,
                     odom_velocity=self.velocity,observation_fresh=age is not None and 0<=age<1.0,
-                    actions_enabled=self.allow_actions,error=self.last_error)
+                    actions_enabled=self.allow_actions,error=self.last_error,odom_messages=self.odom_count,
+                    rejected_odom=self.reject_count,clock_minus_odom_s=self.last_clock_delta)

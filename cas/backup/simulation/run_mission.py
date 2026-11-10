@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import threading
 import uuid
 import rclpy
 from rclpy.signals import SignalHandlerOptions
@@ -21,6 +22,7 @@ from zone_coordinator import MissionCoordinator
 from prepare_map import arrays
 from path_geometry import ClearanceMap
 from velocity_gate import ROBOTS
+from lease_pump import LeasePump
 
 
 def path_distance(point,path):
@@ -34,9 +36,10 @@ def path_distance(point,path):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--start',action='store_true',help='Start motion of BOTH Gazebo robots')
+    modes=parser.add_mutually_exclusive_group(required=True)
+    modes.add_argument('--start',action='store_true',help='Start motion of BOTH Gazebo robots')
+    modes.add_argument('--check-only',action='store_true',help='Test control connection with zero velocity; no goals')
     args=parser.parse_args()
-    if not args.start:parser.error('--start required: this starts Gazebo motion')
     if os.environ.get('ROS_DOMAIN_ID')!='84' or os.environ.get('ROS_LOCALHOST_ONLY')!='1':
         raise RuntimeError('Only localhost Gazebo domain 84 is supported')
     lock=open(f'/tmp/cas_sim_mission_{os.getuid()}_84.lock','w')
@@ -48,7 +51,7 @@ def main():
     clearance=ClearanceMap(spec,allowed)
     coordinator=MissionCoordinator(mission,scenario['shared_zone']['polygon'])
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO);executor=SingleThreadedExecutor()
-    workers={name:Nav2Worker(name,coordinator,allow_actions=True) for name in ROBOTS}
+    workers={name:Nav2Worker(name,coordinator,allow_actions=args.start) for name in ROBOTS}
     for worker in workers.values():executor.add_node(worker)
     control=workers['robot_1'];session=uuid.uuid4().hex
     lease_pub=control.create_publisher(String,'/cas/sim_control/lease',1)
@@ -70,11 +73,17 @@ def main():
         entry=dict(wall_time=time.time(),kind=kind,**values)
         line=json.dumps(entry,ensure_ascii=False,allow_nan=False)
         print(line,flush=True);stream.write(line+'\n');stream.flush()
+    pump=LeasePump(session);sender_stop=threading.Event()
     def heartbeat(permits):
-        nonlocal sequence,last_lease
-        now=time.monotonic();sequence+=1
-        msg=String();msg.data=json.dumps(dict(session=session,sequence=sequence,expires=now+.25,permits=permits))
-        lease_pub.publish(msg);last_lease=now
+        nonlocal last_lease
+        now=time.monotonic();pump.touch(permits,now);last_lease=now
+    def send_leases():
+        while not sender_stop.is_set():
+            packet=pump.packet(time.monotonic())
+            if packet is not None and rclpy.ok():
+                msg=String();msg.data=json.dumps(packet);lease_pub.publish(msg)
+            sender_stop.wait(.04)
+    sender=threading.Thread(target=send_leases,daemon=True)
     def spin_once():
         executor.spin_once(timeout_sec=.01)
         now=time.monotonic()
@@ -88,7 +97,8 @@ def main():
         if any(control.count_publishers(f'/{robot}/cmd_vel') for robot in ROBOTS):
             raise RuntimeError('Existing cmd_vel publishers: '+json.dumps({robot:[info.node_namespace.rstrip('/')+'/'+info.node_name for info in control.get_publishers_info_by_topic(f'/{robot}/cmd_vel')] for robot in ROBOTS}))
         relay=subprocess.Popen([sys.executable,str(Path(__file__).with_name('sim_velocity_relay.py')),'--session',session],start_new_session=True)
-        deadline=time.monotonic()+25;stable=None
+        heartbeat({});sender.start()
+        deadline=time.monotonic()+25;stable=None;next_preflight_log=0.0
         while time.monotonic()<deadline:
             now=spin_once()
             if now-last_lease>.05:heartbeat({})
@@ -100,52 +110,59 @@ def main():
                 ready=ready and status['pose'] is not None and math.dist(status['pose'],mission[status['robot']]['start'])<=.05
                 ready=ready and status['odom_velocity'] is not None and abs(status['odom_velocity'][0])<=.005 and abs(status['odom_velocity'][1])<=.03
             ready=ready and not any(external_actions.values())
+            if now>=next_preflight_log:
+                log('PREFLIGHT_STATUS',workers=statuses,relay=dict(relay_state),active_actions=dict(external_actions))
+                next_preflight_log=now+2
             if ready:
                 if stable is None:stable=now
                 if now-stable>=1:break
             else:stable=None
         else:raise RuntimeError('Preflight did not become ready: '+json.dumps(dict(workers=statuses,relay=relay_state,active_actions=external_actions)))
-        coordinator.start();started=True
-        log('MISSION_STARTED',sequence='wait -> permission -> exit -> destination -> spin -> stopped')
-        deadline=time.monotonic()+600
-        while time.monotonic()<deadline:
-            now=spin_once()
-            if relay.poll() is not None:coordinator.halt('Velocity relay exited')
-            if now-relay_state.get('received',0)>.5 or relay_state.get('blocked'):
-                coordinator.halt('Velocity relay lost / lease expired')
-            for name,r in coordinator.robots.items():
-                if r['pose'] is None:continue
-                if clearance.distance(r['pose'])<.10:coordinator.halt('Body clearance below 10cm: '+name)
-                phase=r['phase']
-                if phase in ['TO_WAIT','CROSSING','TO_GOAL']:
-                    index={'TO_WAIT':0,'CROSSING':1,'TO_GOAL':2}[phase]
-                    if path_distance(r['pose'],mission[name]['segments'][index]['path'])>.025:
-                        coordinator.halt('Tracking deviation exceeds 2.5cm: '+name)
-            poses=[coordinator.robots[name]['pose'] for name in ROBOTS]
-            if all(p is not None for p in poses) and math.dist(*poses)<.22:
-                coordinator.halt('Inter-robot separation below 22cm')
-            coordinator.tick(now)
-            while command_index<len(coordinator.commands):
-                command=coordinator.commands[command_index];command_index+=1
-                if coordinator.blocked and command['kind']!='CANCEL':continue
-                try:
-                    workers[command['robot']].submit(command)
-                    log('COMMAND',robot=command['robot'],command_id=command['id'],command=command['kind'])
-                except Exception as error:coordinator.halt('Worker dispatch: '+str(error))
-            permits={name:worker.active for name,worker in workers.items()
-                     if worker.active is not None and worker.goal_handle is not None and not worker.cancel_requested
-                     and coordinator.robots[name]['phase'] in ['TO_WAIT','CROSSING','TO_GOAL','SPINNING']}
-            if coordinator.blocked:permits={}
-            if now-last_lease>.05:heartbeat(permits)
-            while event_index<len(coordinator.events):
-                log('EVENT',**coordinator.events[event_index]);event_index+=1
-            if now-last_status>1:
-                log('STATUS',owner=coordinator.owner,queue=coordinator.queue,
-                    robots={name:dict(phase=r['phase'],pose=r['pose'],velocity=workers[name].velocity) for name,r in coordinator.robots.items()})
-                last_status=now
-            if coordinator.blocked:raise RuntimeError(coordinator.blocked)
-            if all(r['phase']=='DONE' for r in coordinator.robots.values()):success=True;break
-        else:raise RuntimeError('Mission wall-clock timeout')
+        if args.check_only:
+            success=True
+            log('CONTROL_CHECK_PASSED',coordinator_started=False,commands_generated=len(coordinator.commands))
+        else:
+            coordinator.start();started=True
+            log('MISSION_STARTED',sequence='wait -> permission -> exit -> destination -> spin -> stopped')
+            deadline=time.monotonic()+600
+            while time.monotonic()<deadline:
+                now=spin_once()
+                if relay.poll() is not None:coordinator.halt('Velocity relay exited')
+                if now-relay_state.get('received',0)>.5 or relay_state.get('blocked'):
+                    coordinator.halt('Velocity relay lost / lease expired')
+                for name,r in coordinator.robots.items():
+                    if r['pose'] is None:continue
+                    if clearance.distance(r['pose'])<.10:coordinator.halt('Body clearance below 10cm: '+name)
+                    phase=r['phase']
+                    if phase in ['TO_WAIT','CROSSING','TO_GOAL']:
+                        index={'TO_WAIT':0,'CROSSING':1,'TO_GOAL':2}[phase]
+                        if path_distance(r['pose'],mission[name]['segments'][index]['path'])>.025:
+                            coordinator.halt('Tracking deviation exceeds 2.5cm: '+name)
+                poses=[coordinator.robots[name]['pose'] for name in ROBOTS]
+                if all(p is not None for p in poses) and math.dist(*poses)<.22:
+                    coordinator.halt('Inter-robot separation below 22cm')
+                coordinator.tick(now)
+                while command_index<len(coordinator.commands):
+                    command=coordinator.commands[command_index];command_index+=1
+                    if coordinator.blocked and command['kind']!='CANCEL':continue
+                    try:
+                        workers[command['robot']].submit(command)
+                        log('COMMAND',robot=command['robot'],command_id=command['id'],command=command['kind'])
+                    except Exception as error:coordinator.halt('Worker dispatch: '+str(error))
+                permits={name:worker.active for name,worker in workers.items()
+                         if worker.active is not None and worker.goal_handle is not None and not worker.cancel_requested
+                         and coordinator.robots[name]['phase'] in ['TO_WAIT','CROSSING','TO_GOAL','SPINNING']}
+                if coordinator.blocked:permits={}
+                if now-last_lease>.05:heartbeat(permits)
+                while event_index<len(coordinator.events):
+                    log('EVENT',**coordinator.events[event_index]);event_index+=1
+                if now-last_status>1:
+                    log('STATUS',owner=coordinator.owner,queue=coordinator.queue,
+                        robots={name:dict(phase=r['phase'],pose=r['pose'],velocity=workers[name].velocity) for name,r in coordinator.robots.items()})
+                    last_status=now
+                if coordinator.blocked:raise RuntimeError(coordinator.blocked)
+                if all(r['phase']=='DONE' for r in coordinator.robots.values()):success=True;break
+            else:raise RuntimeError('Mission wall-clock timeout')
     except (Exception,KeyboardInterrupt) as error:
         failure=str(error) or 'Operator interrupted'
         coordinator.halt(failure)
@@ -166,6 +183,8 @@ def main():
                 if not stopped:success=False
             else:success=False
         finally:
+            sender_stop.set()
+            if sender.is_alive():sender.join(timeout=1)
             if relay is not None:
                 relay.terminate()
                 try:relay.wait(timeout=3)
@@ -174,7 +193,7 @@ def main():
             executor.shutdown()
             if rclpy.ok():rclpy.shutdown()
             stream.close();lock.close()
-    print(('MISSION PASSED' if success else 'MISSION STOPPED / NOT COMPLETE')+' | '+str(logfile),flush=True)
+    print((('CONTROL CHECK PASSED' if args.check_only else 'MISSION PASSED') if success else 'CONTROL / MISSION STOPPED')+' | '+str(logfile),flush=True)
     return 0 if success else 1
 
 
