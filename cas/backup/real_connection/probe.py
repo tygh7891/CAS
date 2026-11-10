@@ -24,7 +24,7 @@ def main():
     rclpy.init(domain_id=args.domain)
     node=Node('cas_real_readonly_probe_'+args.robot)
     print(f'{args.robot}: domain {args.domain} discovery / telemetry only; NO MOTION COMMANDS',flush=True)
-    observations={};subscriptions=[];clients={};futures={};parameters={}
+    observations={};tf_edges={};subscriptions=[];clients={};futures={};parameters={};parameter_errors={}
     def record(topic,msg):
         stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
         value=dict(frame=msg.header.frame_id,source_stamp=stamp,pc_wall_minus_source_s=time.time()-stamp)
@@ -40,8 +40,11 @@ def main():
                          occupancy_sha256=hashlib.sha256(msg.data.tobytes()).hexdigest())
         observations[topic]=value
     def transforms(topic,msg):
-        observations[topic]=[dict(parent=tf.header.frame_id,child=tf.child_frame_id,
-                                  source_stamp=tf.header.stamp.sec+tf.header.stamp.nanosec/1e9) for tf in msg.transforms]
+        edges=tf_edges.setdefault(topic,{})
+        for tf in msg.transforms:
+            edges[(tf.header.frame_id,tf.child_frame_id)]=dict(parent=tf.header.frame_id,child=tf.child_frame_id,
+                source_stamp=tf.header.stamp.sec+tf.header.stamp.nanosec/1e9)
+        observations[topic]=list(edges.values())
     try:
         deadline=time.monotonic()+5
         while time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.05)
@@ -51,7 +54,7 @@ def main():
         for name,namespace in nodes:
             if name==node.get_name():continue
             for action,types in get_action_server_names_and_types_by_node(node,name,namespace):actions[action]=types
-            if any(word in name for word in ['amcl','controller_server','planner_server','behavior_server','map_server','bt_navigator']):
+            if any(word in name for word in ['amcl','controller_server','planner_server','behavior_server','map_server','bt_navigator','local_costmap','global_costmap']):
                 full=namespace.rstrip('/')+'/'+name
                 client=node.create_client(GetParameters,full+'/get_parameters');clients[full]=client
         for topic,types in topics.items():
@@ -70,11 +73,20 @@ def main():
         while time.monotonic()<deadline:
             rclpy.spin_once(node,timeout_sec=.02)
             for full,client in clients.items():
-                if full not in futures and client.service_is_ready():
-                    request=GetParameters.Request();request.names=names;futures[full]=client.call_async(request)
-                elif full in futures and full not in parameters and futures[full].done():
-                    try:parameters[full]={key:parameter_value_to_python(value) for key,value in zip(names,futures[full].result().values)}
-                    except Exception as error:parameters[full]=dict(error=str(error))
+                if not client.service_is_ready():continue
+                for name in names:
+                    key=(full,name)
+                    if key not in futures:
+                        request=GetParameters.Request();request.names=[name]
+                        futures[key]=client.call_async(request)
+                    elif name not in parameters.get(full,{}) and futures[key].done():
+                        try:
+                            values=futures[key].result().values
+                            parameters.setdefault(full,{})[name]=parameter_value_to_python(values[0]) if values else None
+                            if not values:parameter_errors.setdefault(full,{})[name]='No value returned (possibly undeclared)'
+                        except Exception as error:
+                            parameters.setdefault(full,{})[name]=None
+                            parameter_errors.setdefault(full,{})[name]=str(error)
         endpoints={}
         for topic in topics:
             if topic.endswith('/cmd_vel') or topic.endswith('/cmd_vel_nav'):
@@ -85,7 +97,7 @@ def main():
                     identity_verified=False,note='Domain mapping is provisional; discovery does not verify physical identity or authorize motion.',
                     network={key:os.environ.get(key) for key in ['ROS_LOCALHOST_ONLY','ROS_AUTOMATIC_DISCOVERY_RANGE','RMW_IMPLEMENTATION']},
                     nodes=[namespace.rstrip('/')+'/'+name for name,namespace in nodes if name!=node.get_name()],
-                    topics=topics,action_servers=actions,cmd_vel_endpoints=endpoints,observations=observations,parameters=parameters)
+                    topics=topics,action_servers=actions,cmd_vel_endpoints=endpoints,observations=observations,parameters=parameters,parameter_errors=parameter_errors)
         directory=Path(__file__).resolve().parent/'logs';directory.mkdir(exist_ok=True)
         file=directory/(args.robot+'_'+time.strftime('%Y%m%d_%H%M%S')+'.json')
         file.write_text(json.dumps(result,indent=2,ensure_ascii=False))
