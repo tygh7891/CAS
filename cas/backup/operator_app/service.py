@@ -57,10 +57,11 @@ class MockAdapter:
             c.cancel_robot(target)
 
 class AppService:
-    def __init__(self, log_dir=None, map_review=None):
+    def __init__(self, log_dir=None, map_review=None, adapter=None):
         self.map_review=copy.deepcopy(map_review)
         self.lock=threading.RLock()
-        self.adapter=MockAdapter()
+        self.adapter=adapter if adapter is not None else MockAdapter()
+        self.mode='SIM_NAV2' if hasattr(self.adapter,'snapshot') else ('MAP_REVIEW' if self.map_review else 'MOCK')
         self.session=uuid.uuid4().hex[:8]
         self.cache={}
         self.events=[]
@@ -72,21 +73,22 @@ class AppService:
         if log_dir is not None:
             log_dir=Path(log_dir); log_dir.mkdir(parents=True,exist_ok=True)
             self.log=(log_dir/(datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.jsonl')).open('a')
-        self.emit('SESSION_CREATED',None,'모의 세션 준비. 실물 명령 없음.')
+        self.emit('SESSION_CREATED',None,'Gazebo SIM_NAV2 세션 준비 (도메인 84).' if self.mode=='SIM_NAV2' else '모의 세션 준비. 실물 명령 없음.')
 
     def emit(self,event,robot,reason,phase=None,owner=None):
         self.seq+=1
         row=dict(seq=self.seq,timestamp=datetime.now(timezone.utc).isoformat(),session_id=self.session,
-                 event=event,robot_id=robot,reason=reason,phase=phase,owner=owner,mode='MOCK')
+                 event=event,robot_id=robot,reason=reason,phase=phase,owner=owner,mode=self.mode if self.mode=='SIM_NAV2' else 'MOCK')
         self.events.append(row)
         if len(self.events)>500:self.events=self.events[-500:]
         if self.log:
             self.log.write(json.dumps(row,ensure_ascii=False)+'\n');self.log.flush()
 
     def collect(self):
-        for row in self.adapter.coordinator.events[self.event_cursor:]:
+        source=self.adapter.events if hasattr(self.adapter,'events') else self.adapter.coordinator.events
+        for row in source[self.event_cursor:]:
             self.emit(row['event'],row['robot_id'],row['reason'],row.get('phase'),row.get('owner'))
-        self.event_cursor=len(self.adapter.coordinator.events)
+        self.event_cursor=len(source)
 
     def tick(self,dt=0.05):
         with self.lock:
@@ -94,6 +96,10 @@ class AppService:
 
     def snapshot(self):
         with self.lock:
+            if hasattr(self.adapter,'snapshot'):
+                data=self.adapter.snapshot()
+                data.update(session_id=self.session,events=copy.deepcopy(self.events))
+                return data
             c=self.adapter.coordinator
             s=c.snapshot()
             for r in s['robots']:
@@ -121,7 +127,8 @@ class AppService:
             if len(self.cache)>=10000:raise RequestError(429,'Request cache full; restart local application')
             if body.get('session_id')!=self.session:
                 raise RequestError(409,'오래된 세션 요청입니다. 현재 상태를 다시 조회하세요.')
-            if body.get('mode','MOCK')!='MOCK':raise RequestError(409,'실물·Nav2 시뮬레이션 모드는 아직 잠겨 있습니다.')
+            expected_mode='SIM_NAV2' if self.mode=='SIM_NAV2' else 'MOCK'
+            if body.get('mode','MOCK')!=expected_mode:raise RequestError(409,'실물·Nav2 시뮬레이션 모드는 아직 잠겨 있거나 현재 모드와 다릅니다.')
             if self.map_review and path in ('/api/v1/tasks','/api/v1/cancel','/api/v1/reset'):
                 raise RequestError(409,'지도 확인 모드: 목적지·대기점·공유존 미설정으로 작업 명령이 잠겨 있습니다.')
             if path=='/api/v1/tasks':
@@ -134,11 +141,18 @@ class AppService:
                 if target not in ['all','robot_1','robot_2']:raise RequestError(400,'Invalid target')
                 self.adapter.cancel(target)
             elif path=='/api/v1/reset':
-                if any(r['task_state']=='RUNNING' for r in self.adapter.coordinator.robots.values()):
+                active=self.adapter.snapshot()['active'] if hasattr(self.adapter,'snapshot') else any(r['task_state']=='RUNNING' for r in self.adapter.coordinator.robots.values())
+                if active:
                     raise RequestError(409,'먼저 진행 중인 작업을 취소하세요.')
                 if body.get('confirm') is not True:raise RequestError(400,'Reset confirmation required')
-                self.adapter=MockAdapter();self.event_cursor=0;self.session=uuid.uuid4().hex[:8]
-                self.emit('SESSION_RESET',None,'모의 좌표·예약 초기화. 실제 복귀 명령 아님.')
+                if hasattr(self.adapter,'reset'):
+                    self.adapter.reset()
+                    self.event_cursor=len(self.adapter.events)
+                    self.session=uuid.uuid4().hex[:8]
+                    self.emit('SESSION_RESET',None,'Gazebo 시뮬레이션 세션 초기화 완료.')
+                else:
+                    self.adapter=MockAdapter();self.event_cursor=0;self.session=uuid.uuid4().hex[:8]
+                    self.emit('SESSION_RESET',None,'모의 좌표·예약 초기화. 실제 복귀 명령 아님.')
             else:raise RequestError(404,'Unknown command route')
             self.collect()
             reply=dict(status='ACCEPTED',request_id=request_id,session_id=self.session,replayed=False)
@@ -150,7 +164,9 @@ class AppService:
             try:self.tick()
             except Exception as exc:
                 with self.lock:
-                    self.adapter.coordinator.fail_all('Internal simulation error')
+                    if hasattr(self.adapter,'cancel'):self.adapter.cancel('all')
+                    if hasattr(self.adapter,'coordinator') and hasattr(self.adapter.coordinator,'fail_all'):
+                        self.adapter.coordinator.fail_all('Internal simulation error')
                     self.collect();self.emit('SERVER_ERROR',None,str(exc))
                 self.stop_event.set()
 
@@ -159,7 +175,9 @@ class AppService:
         with self.lock:
             if self.closed:return
             self.closed=True
-            self.adapter.cancel('all');self.collect()
+            if hasattr(self.adapter,'close'):self.adapter.close()
+            else:self.adapter.cancel('all')
+            self.collect()
             if self.log:self.log.close()
 
 

@@ -29,10 +29,14 @@ class MissionCoordinator:
         self.robots[name]['pending'] = command['id']
         self.emit(name,kind)
 
-    def start(self):
-        if any(r['phase']!='IDLE' for r in self.robots.values()):
+    def start(self, names=None):
+        targets = sorted(self.robots) if names is None else list(names)
+        if self.blocked:
+            raise ValueError('Mission is blocked: '+str(self.blocked))
+        if any(self.robots[n]['phase']!='IDLE' for n in targets):
             raise ValueError('Mission already started')
-        for name,r in self.robots.items():
+        for name in targets:
+            r = self.robots[name]
             r['phase']='TO_WAIT'
             self.command(name,'FOLLOW_PATH',self.routes[name]['segments'][0]['path'])
 
@@ -53,10 +57,22 @@ class MissionCoordinator:
         self.blocked=reason
         self.queue.clear()
         for name,r in self.robots.items():
-            if r['phase'] not in ['DONE','IDLE']:
+            if r['phase'] not in ['DONE','IDLE','CANCELED','HALTED']:
                 r['phase']='HALTED'
                 self.command(name,'CANCEL')
         # No release on cancellation, stale pose or failure.
+
+    def cancel(self,target='all'):
+        if target=='all':
+            self.halt('Operator canceled all');return
+        r=self.robots[target]
+        if r['phase'] in ['IDLE','DONE','HALTED','CANCELED']:return
+        overlap=r['pose'] is not None and zone_distance(r['pose'],self.polygon)<=self.radius
+        if self.owner==target or overlap:
+            self.halt('Canceled while owning/occupying shared zone: '+target);return
+        if target in self.queue:self.queue.remove(target)
+        r['phase']='CANCELED';r['pending']=None
+        self.command(target,'CANCEL');self.emit(target,'CANCELED')
 
     def result(self,name,command_id,success):
         r=self.robots[name]
@@ -72,7 +88,7 @@ class MissionCoordinator:
     def tick(self,now):
         if self.blocked:return
         for name,r in self.robots.items():
-            if r['phase'] in ['IDLE','DONE']:continue
+            if r['phase'] in ['IDLE','DONE','CANCELED']:continue
             if r['pose'] is None or not 0<=now-r['received']<self.timeout:
                 self.halt('Missing/stale observation: '+name);return
             overlap=zone_distance(r['pose'],self.polygon)<=self.radius

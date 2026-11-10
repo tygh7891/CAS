@@ -62,7 +62,7 @@ class Nav2Worker(Node):
         self.action_clients={'FOLLOW_PATH':ActionClient(self,FollowPath,f'/{robot}/follow_path'),
                       'SPIN':ActionClient(self,Spin,f'/{robot}/spin')}
         self.subscription=self.create_subscription(Odometry,f'/{robot}/odom',self.odom_callback,qos_profile_sensor_data)
-        self.odom=None;self.received=-math.inf;self.source=-math.inf;self.velocity=None
+        self.odom=None;self.received=-math.inf;self.source=-math.inf;self.velocity=None;self.yaw=0.0
         self.active=None;self.goal_handle=None;self.cancel_requested=False;self.deadline=0.0
         self.odom_count=0;self.reject_count=0;self.last_clock_delta=None
         self.last_error='Waiting for odometry / TF'
@@ -108,8 +108,10 @@ class Nav2Worker(Node):
         twist=msg.twist.twist
         linear=math.hypot(twist.linear.x,twist.linear.y);angular=twist.angular.z
         pose=[tf.transform.translation.x,tf.transform.translation.y]
+        q=tf.transform.rotation
+        yaw=math.atan2(2.0*(q.w*q.z+q.x*q.y),1.0-2.0*(q.y*q.y+q.z*q.z))
         if self.coordinator.observation(self.robot,pose,stamp,self.received,linear,angular):
-            self.source=stamp;self.velocity=[linear,angular];self.last_error=None
+            self.source=stamp;self.velocity=[linear,angular];self.yaw=yaw;self.last_error=None
 
     def submit(self,command):
         if command['robot']!=self.robot:raise ValueError('Wrong-robot command rejected')
@@ -185,7 +187,7 @@ class Nav2Worker(Node):
         r=self.coordinator.robots[self.robot]
         age=None if not math.isfinite(r['received']) else now-r['received']
         return dict(robot=self.robot,follow_path=self.action_clients['FOLLOW_PATH'].server_is_ready(),
-                    spin=self.action_clients['SPIN'].server_is_ready(),pose=r['pose'],pose_age_s=age,
+                    spin=self.action_clients['SPIN'].server_is_ready(),pose=r['pose'],yaw=self.yaw,pose_age_s=age,
                     odom_velocity=self.velocity,observation_fresh=age is not None and 0<=age<1.0,
                     actions_enabled=self.allow_actions,error=self.last_error,odom_messages=self.odom_count,
                     rejected_odom=self.reject_count,clock_minus_odom_s=self.last_clock_delta)

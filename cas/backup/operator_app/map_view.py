@@ -63,12 +63,42 @@ class ReceivedMapView(QWidget):
                 u,v=self.spec.world_to_image(x,y)
                 return QPointF(rect.left()+u/self.spec.width*rect.width(),rect.top()+v/self.spec.height*rect.height())
             from PyQt5.QtGui import QPolygonF
+            sim_mode=bool(self.state and self.state.get('mode')=='SIM_NAV2')
+            if sim_mode:
+                routes=self.state.get('layout',{}).get('routes',{})
+                for name,legs in routes.items():
+                    pen_color=QColor('#3b82f6' if name=='robot_1' else '#f59e0b')
+                    pen_color.setAlpha(150)
+                    p.setPen(QPen(pen_color,2,Qt.SolidLine))
+                    for leg in legs:
+                        for a,b in zip(leg,leg[1:]):
+                            p.drawLine(screen(*a),screen(*b))
             polygon=QPolygonF([screen(*xy) for xy in self.candidates['shared_zone']['polygon']])
-            p.setPen(QPen(QColor('#ca8a04'),2,Qt.DashLine));p.setBrush(QColor(255,220,0,65));p.drawPolygon(polygon)
+            zone_state=self.state.get('zone',{}) if sim_mode else {}
+            if zone_state.get('blocked_reason'):
+                p.setPen(QPen(QColor('#dc2626'),2,Qt.DashLine));p.setBrush(QColor(254,202,202,120))
+            elif zone_state.get('owner'):
+                p.setPen(QPen(QColor('#16a34a'),2,Qt.DashLine));p.setBrush(QColor(187,247,208,110))
+            else:
+                p.setPen(QPen(QColor('#ca8a04'),2,Qt.DashLine));p.setBrush(QColor(255,220,0,65))
+            p.drawPolygon(polygon)
             p.setBrush(Qt.NoBrush)
+            suffix='' if sim_mode else ' 후보'
             for name,point in self.candidates['points'].items():
-                center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#1d4ed8'),2));p.drawEllipse(center,6,6);p.drawText(center+QPointF(8,-6),name+' 후보')
+                center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#1d4ed8'),2));p.drawEllipse(center,6,6);p.drawText(center+QPointF(8,-6),name+suffix)
             for name,point in self.candidates['waiting'].items():
                 center=screen(point['x'],point['y']);p.setPen(QPen(QColor('#b45309'),2));p.drawEllipse(center,4,4);p.drawText(center+QPointF(6,14),'W'+name[-1])
-        p.setPen(QColor('#334155'));p.drawText(10,18,'수령 지도 · 좌표 후보는 미승인 / 주행 불가')
+            if sim_mode:
+                colors={'robot_1':'#2563eb','robot_2':'#d97706'}
+                for r in self.state.get('simulation',{}).get('robots',[]):
+                    pos=r.get('position')
+                    if not pos or len(pos)!=2:continue
+                    center=screen(pos[0],pos[1]);color=QColor(colors.get(r['id'],'#2563eb'))
+                    p.setPen(QPen(Qt.white,2));p.setBrush(color);p.drawEllipse(center,10,10)
+                    angle=float(r.get('yaw',0.0))
+                    tip=screen(pos[0]+0.09*math.cos(angle),pos[1]+0.09*math.sin(angle))
+                    p.setPen(QPen(Qt.white,2));p.drawLine(center,tip)
+                    p.setPen(color);p.drawText(center+QPointF(12,5),r['id'].replace('robot_','R'))
+        p.setPen(QColor('#334155'))
+        p.drawText(10,18,'Gazebo SIM_NAV2 · 검증 경로 및 실시간 TF 위치 표시 (도메인 84)' if (self.state and self.state.get('mode')=='SIM_NAV2') else '수령 지도 · 좌표 후보는 미승인 / 주행 불가')
         p.setPen(QColor('#64748b'));p.drawText(10,self.height()-10,'상단이 이미지 row=0 · 클릭: 픽셀 중심의 map 좌표 확인')

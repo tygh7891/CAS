@@ -94,5 +94,20 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIsNotNone(self.c.blocked)
         self.assertEqual(self.c.owner,'robot_1')
 
+    def test_single_robot_cancel_before_entry_leaves_other_running(self):
+        self.ready()
+        self.c.cancel('robot_2')
+        self.assertEqual(self.c.robots['robot_2']['phase'],'CANCELED')
+        self.assertEqual(self.c.queue,[])
+        self.assertIsNone(self.c.blocked)
+        self.assertEqual(self.c.owner,'robot_1')
+
+    def test_owner_cancel_retains_ownership_and_halts(self):
+        self.ready()
+        self.c.cancel('robot_1')
+        self.assertEqual(self.c.owner,'robot_1')
+        self.assertIsNotNone(self.c.blocked)
+        self.assertEqual(self.c.robots['robot_2']['phase'],'HALTED')
+
 
 if __name__=='__main__':unittest.main(verbosity=2)

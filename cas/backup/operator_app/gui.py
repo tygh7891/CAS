@@ -119,13 +119,22 @@ class Dashboard(QMainWindow):
 
     def render(self,state):
         self.state=state;self.connected=True;self.connection.setText('서버 연결 정상 · 5Hz')
-        self.notice.setText('MOCK 모드 · 임시 가상 맵 · 실물/센서/배터리 미연결 · 완료 후 목적지 대기')
-        self.map.state=state;self.map.update()
+        sim_nav2=state.get('mode')=='SIM_NAV2'
+        if sim_nav2:
+            self.setWindowTitle('CAS | 독립 관제 · SIM_NAV2 (Gazebo 도메인 84)')
+            self.mode.setText('SIM_NAV2 · 도메인 84 (실물 14/30 분리)')
+            self.notice.setText(state.get('preflight_reason') or 'Gazebo SIM_NAV2 연결 정상 · 검증 경로 추종 · 실물 명령 없음')
+            if state.get('map_review'):self.render_sim_map(state)
+        else:
+            self.notice.setText('MOCK 모드 · 임시 가상 맵 · 실물/센서/배터리 미연결 · 완료 후 목적지 대기')
+            self.map.state=state;self.map.update()
+        tag='Gazebo' if sim_nav2 else '모의'
         for r in state['simulation']['robots']:
             reason='공유존 대기 — 다른 로봇 통과 중' if r['phase']=='WAITING_ZONE' else PHASE.get(r['phase'],r['phase'])
-            self.cards[r['id']].setText(f"모의 연결 정상 · 배터리: —\n작업: {r['destination']} 작업장\n결과: {STATES.get(r['task_state'],r['task_state'])}\n단계: {reason}\n위치: {r['position']} m (모의)\n위치 갱신: {r['pose_age_s']:.2f}초 전\n정지: {'확인(모의)' if r['stopped_confirmed'] else '이동/작업 중'}")
+            conn='Gazebo Nav2 정상' if r.get('connection')=='SIM_NAV2_OK' else ('Gazebo 대기' if sim_nav2 else '모의 연결 정상')
+            self.cards[r['id']].setText(f"{conn} · 배터리: —\n작업: {r['destination']} 작업장\n결과: {STATES.get(r['task_state'],r['task_state'])}\n단계: {reason}\n위치: {r['position']} m ({tag})\n위치 갱신: {r['pose_age_s']:.2f}초 전\n정지: {'확인('+tag+')' if r['stopped_confirmed'] else '이동/작업 중'}")
         z=state['zone'];join=lambda xs:', '.join(xs) if xs else '없음'
-        self.zone.setText(f"진입권: {z['owner'] or '없음'}\n실제 가상 점유: {join(z['occupants'])}\n대기: {join(z['waiting'])}\n보류: {z['blocked_reason'] or '없음'}")
+        self.zone.setText(f"진입권: {z['owner'] or '없음'}\n실제 {tag} 점유: {join(z['occupants'])}\n대기: {join(z['waiting'])}\n보류: {z['blocked_reason'] or '없음'}")
         for e in state['events']:
             if e['seq']>self.last_seq:
                 stamp=datetime.fromisoformat(e['timestamp']).astimezone(ZoneInfo('Asia/Seoul')).strftime('%H:%M:%S')
@@ -133,8 +142,25 @@ class Dashboard(QMainWindow):
                 if e['event'] in ('SERVER_ERROR','ZONE_BLOCKED','HALTED'):detail=e['reason']
                 self.log.append(f"{stamp}  {e['robot_id'] or '서버'}  {EVENTS.get(e['event'],e['event'])}  {detail}")
                 self.last_seq=e['seq']
-        if state.get('map_review'):self.render_map_review(state)
+        if state.get('map_review') and not sim_nav2:self.render_map_review(state)
         self.update_buttons()
+
+    def render_sim_map(self,state):
+        from map_view import ReceivedMapView
+        review=state['map_review']
+        if not isinstance(self.map,ReceivedMapView):
+            old=self.map;self.map=ReceivedMapView();self.map.on_point=self.point_info.setText
+            self.map.show_mask=True
+            self.map_container.replaceWidget(old,self.map);old.deleteLater()
+            self.mask_toggle.setChecked(True)
+            self.point_info.setText('지도를 클릭하면 map 좌표가 표시됩니다. (Gazebo SIM_NAV2 실시간 관제)')
+        self.map.state=state
+        self.map.set_review(review)
+        self.map.update()
+        self.mask_toggle.setVisible(review['mask'] is not None)
+        self.mask_toggle.setText('통행 허용 영역 강조 (원본 흰 픽셀 · 파란 통로)')
+        b=review['base']
+        self.map_metadata.setText(f"{b['width']}×{b['height']} px · {b['resolution']*100:.1f} cm/px · 원점 {b['origin']} · 지도 식별 {b['sha256'][:10]}")
 
     def toggle_mask(self,checked):
         if hasattr(self.map,'show_mask'):self.map.show_mask=checked;self.map.update()
@@ -173,7 +199,8 @@ class Dashboard(QMainWindow):
     def post(self,path,fields):
         if not self.connected or self.pending or self.state is None:return
         self.pending=True;self.update_buttons()
-        body=dict(fields,request_id=uuid.uuid4().hex,session_id=self.state['session_id'],mode='MOCK')
+        mode='SIM_NAV2' if self.state.get('mode')=='SIM_NAV2' else 'MOCK'
+        body=dict(fields,request_id=uuid.uuid4().hex,session_id=self.state['session_id'],mode=mode)
         reply=self.request(path,body)
         def done():
             self.pending=False

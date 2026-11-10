@@ -10,7 +10,8 @@ from PIL import Image
 from scipy.ndimage import distance_transform_edt
 import yaml
 from prepare import prepare,world_tree
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'operator_app'))
+_OPERATOR_APP=str(Path(__file__).resolve().parents[1]/'operator_app')
+if _OPERATOR_APP not in sys.path:sys.path.append(_OPERATOR_APP)
 from map_geometry import load_map,review_maps
 
 RADIUS=0.10
