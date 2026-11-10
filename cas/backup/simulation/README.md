@@ -136,3 +136,25 @@ python3 ~/CAS/cas/backup/simulation/test_map_profile.py
 ```
 
 다른 지도 파일은 CAS_MAP_YAML·CAS_MASK_YAML 환경 변수로 지정할 수 있다. X 형태가 아니거나 여유거리·후보 경로 검사를 통과하지 못하면 생성기를 보완하거나 수동 후보를 준비해야 하며 임의 좌표로 강행하지 않는다. 이번 프로필의 Gazebo 사용자 실행 확인은 아직 대기 중이다.
+
+### B3: Nav2 준비 확인 (이동 출력 차단)
+
+지도 월드가 실행 중인 PC의 새 터미널에서:
+
+```bash
+bash ~/CAS/cas/backup/simulation/run_nav2_preview.sh
+```
+
+다른 PC 터미널에서:
+
+```bash
+bash ~/CAS/cas/backup/simulation/check_nav2_preview.sh
+```
+
+도메인 84에 로봇별 AMCL, 지도 서버, 전역/지역 costmap의 keepout 필터,
+Nav2 Action 서버를 생성합니다. 초기 위치는 생성된 Gazebo 월드의 spawn pose를 사용합니다.
+속도 출력은 `/<robot>/nav2_preview_cmd_vel`에서 끝나며 Gazebo의 cmd_vel과 연결되지 않습니다.
+확인 스크립트는 lifecycle, TF, Action 발견 및 cmd_vel 발행자 부재를 검사하며 목표를 보내지 않습니다.
+이 검사는 통로 준수 주행이나 공유존 제어의 검증이 아닙니다. 후보 좌표 승인, 필터 실제 적용 확인,
+경로 생성 검증, 주행 및 회전 검증은 이후 단계입니다. GUI 작업 명령은 계속 잠겨 있습니다.
+반경 0.10m, 속도 0.08m/s, 목표 허용 오차 0.04m는 시뮬레이션 초기 설정입니다.
