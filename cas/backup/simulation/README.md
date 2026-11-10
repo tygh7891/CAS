@@ -299,3 +299,13 @@ bash ~/CAS/cas/backup/simulation/run_mission.sh --check-only
 PREFLIGHT_STATUS에는 관측 수신/거부 수, clock-odom 시차, 감시 상태를 2초마다 표시합니다.
 감시 갱신은 별도 송신 스레드에서 처리하되, 실행 루프의 진행 신호가 0.15초 이상
 끊기면 갱신하지 않습니다. 독립 송신 스레드가 멈춘 실행 루프를 대신하여 권한을 연장하지 않습니다.
+
+
+#### 몸체 크기 기준 일치
+
+`robot_radius: 0.10`은 경로 검사와 공유존 판정에 쓰는 여유 포함 원형 반경입니다.
+Nav2의 기본 `footprint_padding`을 중복 적용하지 않도록 전역/지역 costmap 모두
+`footprint_padding: 0.0`을 명시합니다. 이전에는 기본 padding 0.01m가 각 축에
+더해져 발행된 몸체 최대 반경이 약 0.11414m였습니다. 이 설정 변경은 충돌 검사를
+비활성화하지 않으며, 실제 로봇 외형 측정과 여유 반경 검증을 대체하지 않습니다.
+Nav2 재시작 후 `inspect_costmaps.sh`에서 적용값과 발행된 몸체를 다시 확인합니다.

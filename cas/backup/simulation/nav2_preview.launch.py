@@ -54,7 +54,7 @@ def configuration(folder, robot):
                                   min_velocity=[-0.08, 0.0, -0.4], enable_stamped_cmd_vel=False)
     for scope in ['local', 'global']:
         cost = dict(use_sim_time=True, global_frame='map' if scope == 'global' else f'{robot}/odom',
-                    robot_base_frame=f'{robot}/base_footprint', resolution=0.01, robot_radius=0.10,
+                    robot_base_frame=f'{robot}/base_footprint', resolution=0.01, robot_radius=0.10, footprint_padding=0.0,
                     update_frequency=5.0, publish_frequency=2.0, transform_tolerance=0.5,
                     plugins=['static_layer', 'obstacle_layer', 'inflation_layer'],
                     filters=['keepout_filter', 'keepout_inflation'], always_send_full_costmap=True,

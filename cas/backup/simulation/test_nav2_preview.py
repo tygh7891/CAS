@@ -19,6 +19,10 @@ class PreviewConfiguration(unittest.TestCase):
             self.assertEqual(local['robot_base_frame'], f'{robot}/base_footprint')
             self.assertEqual(local['obstacle_layer']['scan']['topic'], f'/{robot}/scan')
             self.assertIn('keepout_filter', local['filters'])
+            for scope in ['local','global']:
+                cost=data[f'/{robot}/{scope}_costmap/{scope}_costmap']['ros__parameters']
+                self.assertEqual(cost['robot_radius'],0.10)
+                self.assertEqual(cost['footprint_padding'],0.0)
 
 
 if __name__ == '__main__':
