@@ -94,6 +94,20 @@ ros2 run nav2_map_server map_saver_cli -f <map name>
 ros2 launch pinky_navigation bringup_launch.xml map:=<map name>
 ```
 
+### 킵아웃 필터와 지도
+
+윤호 로봇의 `pinky_navigation` 설정을 반영했습니다. `nav2_params.yaml`은 local/global costmap에 `KeepoutFilter`를 적용하고, `localization_launch.xml`은 마스크 지도 서버와 필터 정보 서버를 실행합니다. 두 서버는 `bringup_launch.xml`의 localization lifecycle 관리 대상에 포함됩니다.
+
+기본 마스크는 패키지에 포함된 `pinky_navigation/map/fleet_x_keepout_new.yaml` 및 `.pgm`입니다. 원본은 윤호 로봇의 `/home/pinky/dev_ws/maps/`에 있으며, 지도 해상도는 0.01 m/pixel, 원점은 `[-1.798, -1.325, 0]`입니다. 빌드 후 다른 마스크를 쓰려면 다음처럼 지정할 수 있습니다.
+
+```
+ros2 launch pinky_navigation bringup_launch.xml map:=<map.yaml 경로> keepout_mask:=<keepout.yaml 경로>
+```
+
+윤호 로봇의 `/home/pinky/dev_ws` 일반 파일 전체도 [`pinky_dev_ws/`](pinky_dev_ws)에 원래 디렉터리 구조로 복사했습니다. 지도 14개 파일, LCD 예제, 노트북, `nav_status_lcd.py` 등이 들어 있습니다. 알림용 FIFO `.lgd-nfy0` 4개는 일반 파일이 아니어서 복사본에 포함하지 않았습니다. `pinky_navigation/map`의 킵아웃 마스크 2개는 이 복사본에서 가져온 것입니다.
+
+함께 반영된 조정값: SLAM 지도 갱신 주기 1.0초, 해상도 0.01 m, 최소 이동 거리 0.1 m, 최소 회전량 0.15 rad; AMCL beam skip 활성화; 목표 접근 감속 거리 0.2 m, 위치 허용 오차 0.08 m, 각도 허용 오차 0.15 rad, 경로 계획 허용 오차 0.05 m.
+
 #### [ONLY PC] nav2 view
 ```
 ros2 launch pinky_navigation nav2_view.launch.xml

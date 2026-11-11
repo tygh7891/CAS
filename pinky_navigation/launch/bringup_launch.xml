@@ -11,7 +11,13 @@
     <arg name="use_composition" default="True"/>
     <arg name="use_respawn" default="False"/>
     <arg name="log_level" default="info"/>
-    <arg name="lifecycle_nodes_local" default="['map_server', 'amcl']"/>
+    <arg name="keepout_mask" default="$(find-pkg-share pinky_navigation)/map/fleet_x_keepout_new.yaml"/>
+    <!-- <arg name="lifecycle_nodes_local" default="['map_server', 'amcl']"/> -->
+    <arg name="lifecycle_nodes_local"
+        default="['map_server',
+               'amcl',
+               'keepout_filter_mask_server',
+               'keepout_costmap_filter_info_server']"/>
     <arg name="lifecycle_nodes_nav" default="['controller_server',
                        'planner_server',
                        'behavior_server',
@@ -34,6 +40,7 @@
         <include file="$(find-pkg-share pinky_navigation)/launch/localization_launch.xml">
             <arg name="params_file" value="$(var params_file)"/>
             <arg name="map" value="$(var map)"/>
+            <arg name="keepout_mask" value="$(var keepout_mask)"/>
             <arg name="use_sim_time" value="$(var use_sim_time)"/>
             <arg name="autostart" value="$(var autostart)"/>
             <arg name="use_composition" value="$(var use_composition)"/>

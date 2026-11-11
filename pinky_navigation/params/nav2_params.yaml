@@ -9,7 +9,7 @@ amcl:
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
-    do_beamskip: false
+    do_beamskip: true
     global_frame_id: "map"
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
@@ -110,7 +110,7 @@ controller_server:
       inflation_cost_scaling_factor: 3.0     # 컨트롤러 내부에서 비용을 계산할 때 쓰는 인플레이션 가중치
 
       # 목적지 접근 시 감속
-      approach_velocity_scaling_dist: 0.6    # [m] 목표 지점까지 이 거리만큼 남았을 때부터 서서히 감속
+      approach_velocity_scaling_dist: 0.2   # [m] 목표 지점까지 이 거리만큼 남았을 때부터 서서히 감속
       min_approach_linear_velocity: 0.05     # [m/s] 목표 지점 근처에서 속도를 줄이더라도 이 속도 밑으론 안 내림
 
       # 안전 및 충돌 방지
@@ -155,8 +155,8 @@ controller_server:
     general_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       stateful: true
-      xy_goal_tolerance: 0.25                    # [m] 목표 지점 반경 0.25m 안에 들어오면 도착 인정
-      yaw_goal_tolerance: 0.25                   # [rad] 목표 각도 오차 약 14도 이내면 올바르게 본 것으로 인정
+      xy_goal_tolerance: 0.08                    # [m] 목표 지점 반경 0.25m 안에 들어오면 도착 인정
+      yaw_goal_tolerance: 0.15                  # [rad] 목표 각도 오차 약 14도 이내면 올바르게 본 것으로 인정
 
     # ==========================================================
     # 4. 주행 진척도 검사 (Progress Checker)
@@ -184,6 +184,15 @@ local_costmap:
       #robot_radius: 0.22
       footprint: '[[0.06, 0.06], [0.06, -0.06], [-0.06, -0.06], [-0.06, 0.06]]'
       plugins: ["voxel_layer", "inflation_layer"]
+
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/keepout_costmap_filter_info"
+        override_lethal_cost: false   #true
+        # lethal_override_cost: 200
+
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -226,6 +235,15 @@ global_costmap:
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/keepout_costmap_filter_info"
+        override_lethal_cost: false   #true
+        # lethal_override_cost: 200
+
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -270,7 +288,7 @@ planner_server:
     costmap_update_timeout: 1.0
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
+      tolerance: 0.05
       use_astar: false
       allow_unknown: true
 
@@ -336,3 +354,17 @@ velocity_smoother:
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
     enable_stamped_cmd_vel: false
+
+
+keepout_filter_mask_server:
+  ros__parameters:
+    yaml_filename: ""
+    topic_name: "/keepout_filter_mask"
+
+keepout_costmap_filter_info_server:
+  ros__parameters:
+    type: 0
+    filter_info_topic: "/keepout_costmap_filter_info"
+    mask_topic: "/keepout_filter_mask"
+    base: 0.0
+    multiplier: 1.0
