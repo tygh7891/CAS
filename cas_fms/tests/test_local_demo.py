@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from math import ceil, floor, hypot
+from math import ceil, floor, hypot, remainder, tau
 from typing import Any
 
 import pytest
@@ -32,16 +32,18 @@ class A1Demo:
         )
         self.client = create_app(self.service).test_client()
         self.robots = {
-            robot_id: MockRobot(route.start)
+            robot_id: MockRobot(
+                route.start, self.scenario.zone, self.scenario.robot_radius_m
+            )
             for robot_id, route in self.scenario.routes.items()
         }
 
-    def tick(self, skip: str | None = None) -> None:
+    def tick(self, skip: str | None = None, *, slow: str | None = None) -> None:
         self.now += 0.1
         for robot_id, robot in self.robots.items():
             if robot_id == skip:
                 continue
-            robot.advance(0.1)
+            robot.advance(0.025 if robot_id == slow else 0.1)
             response = self.client.post(
                 f"/api/workers/{robot_id}/poll", json=robot.observe(self.now)
             )
@@ -171,11 +173,103 @@ def test_demo_preset_resets_and_preserves_exclusive_access(preset: DemoPreset) -
     if preset == DemoPreset.CANCEL:
         assert state["zone_blocked"] and events.count("zone_granted") == 1
     else:
-        assert not state["zone_owner"] and events.count("zone_granted") == 2
+        crossings = 4 if preset == DemoPreset.NORMAL else 2
+        assert not state["zone_owner"] and events.count("zone_granted") == crossings
     if preset == DemoPreset.DROPOUT:
         assert blocked_during_dropout
         second_grant = events.index("zone_granted", events.index("zone_granted") + 1)
         assert events.index("location_resumed") < second_grant
+
+
+@pytest.mark.parametrize("staggered", (False, True))
+def test_round_trip_keeps_the_leading_goal_and_restores_start(staggered: bool) -> None:
+    demo = A1Demo(demo_mode=True)
+    demo.tick()
+    assert (
+        demo.client.post(
+            "/api/run", json={"request_id": "round-trip", "preset": DemoPreset.NORMAL}
+        ).status_code
+        == 202
+    )
+    leader = None
+    leader_goal = None
+    leader_cleared = False
+    waiting = set()
+    for _ in range(350):
+        demo.tick(slow="robot_2" if staggered and not leader_cleared else None)
+        state = demo.status()
+        owner = state["zone_owner"]
+        if not leader_cleared:
+            if leader is None and owner:
+                leader = owner
+                leader_goal = demo.robots[leader].command_id
+                assert demo.robots[leader].motion is not None
+            if leader and owner == leader:
+                robot = demo.robots[leader]
+                assert robot.command_id == leader_goal and not robot.held
+            elif leader:
+                leader_cleared = True
+            waiting.update(state["zone_waiting"])
+        for robot_id, robot in demo.robots.items():
+            if demo.service.zone.overlaps(robot.pose):
+                assert owner == robot_id
+        if all(robot["task_state"] == "SUCCEEDED" for robot in state["robots"]):
+            break
+    else:
+        pytest.fail("Round trip did not complete")
+
+    assert leader is not None and leader_cleared
+    if staggered:
+        assert leader == "robot_1" and not waiting
+    else:
+        assert waiting == set(demo.robots) - {leader}
+    for robot_id, robot in demo.robots.items():
+        start = demo.scenario.routes[robot_id].start
+        assert robot.motion is None and robot.pose.distance_to(start) < 1e-9
+        assert abs(remainder(robot.pose.yaw_rad - start.yaw_rad, tau)) < 1e-9
+
+
+def test_round_trip_waits_for_revocation_acknowledgement(monkeypatch) -> None:
+    demo = A1Demo(demo_mode=True)
+    demo.tick()
+    assert (
+        demo.client.post(
+            "/api/run", json={"request_id": "round-trip", "preset": DemoPreset.NORMAL}
+        ).status_code
+        == 202
+    )
+    leader = demo.wait_for_first_crossing()
+    robot = demo.robots[leader]
+    receive = robot.receive_poll
+    blocked = False
+
+    def delay_revocation(reply: dict[str, Any]) -> None:
+        nonlocal blocked
+        command = reply["command"]
+        if (
+            command
+            and command["command_id"] == robot.command_id
+            and not command["reservation_id"]
+        ):
+            blocked = True
+            return
+        receive(reply)
+
+    monkeypatch.setattr(robot, "receive_poll", delay_revocation)
+    for _ in range(60):
+        demo.tick()
+        if blocked:
+            break
+    assert blocked and not demo.service.zone.overlaps(robot.pose)
+    for _ in range(5):
+        demo.tick()
+        assert demo.status()["zone_owner"] == leader
+
+    monkeypatch.setattr(robot, "receive_poll", receive)
+    demo.tick()
+    assert demo.status()["zone_owner"] == leader
+    demo.tick()
+    assert demo.status()["zone_owner"] in (set(demo.robots) - {leader})
 
 
 def test_real_run_requires_verified_worker_readiness_and_start_heading() -> None:

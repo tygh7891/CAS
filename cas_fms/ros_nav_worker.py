@@ -23,7 +23,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float32
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from fms_geometry import Pose, ZoneBounds
+from fms_geometry import CROSSING_STOP_MARGIN_M, Pose, ZoneBounds
 
 REPORT_INTERVAL_S = 0.10
 LEASE_S = 0.60
@@ -133,8 +133,11 @@ class RosNavWorker(Node):
             travel = twist.linear.x * self._projection_horizon_s()
             x, y, yaw = self.pose.x_m, self.pose.y_m, self.pose.yaw_rad
             projected = Pose(x + travel * cos(yaw), y + travel * sin(yaw), yaw)
-            if self.zone.overlaps(self.pose, self.radius_m) or self.zone.overlaps(
-                projected, self.radius_m
+            radius = self.radius_m
+            if self.command and self.command["kind"] == "TRAVERSE":
+                radius += CROSSING_STOP_MARGIN_M
+            if self.zone.overlaps(self.pose, radius) or self.zone.overlaps(
+                projected, radius
             ):
                 self.velocity.publish(Twist())
                 return
@@ -211,6 +214,9 @@ class RosNavWorker(Node):
                 pose=asdict(self.pose),
                 stopped=self.stopped,
                 command_id=self.command["command_id"] if self.command else None,
+                reservation_id=self.command.get("reservation_id")
+                if self.command
+                else None,
                 result=self.result,
             )
             payload.update(self._status_fields(now))
@@ -231,15 +237,14 @@ class RosNavWorker(Node):
         self.lease_at = monotonic()
         self.paused = reply["location_paused"]
         command = reply["command"]
-        if (
-            self.velocity is not None
-            and command is not None
-            and (
+        if self.velocity is not None and command is not None:
+            if (
                 self.command is None
                 or command["command_id"] != self.command["command_id"]
-            )
-        ):
-            self._receive(command)
+            ):
+                self._receive(command)
+            elif command["kind"] == "TRAVERSE":
+                self.command = command
 
     def _receive(self, command: dict[str, Any]) -> None:
         self.command = command
@@ -255,14 +260,15 @@ class RosNavWorker(Node):
         if not self._motion_ready(monotonic()):
             self.result = "FAILED"
             return
-        if kind == "NAVIGATE":
+        if kind in ("NAVIGATE", "TRAVERSE"):
             target = Pose(**command["target"])
             goal = NavigateToPose.Goal()
             goal.pose = self._goal_pose(target)
             self.pending_goal = self.navigate.send_goal_async(goal)
         elif kind == "SPIN":
             goal = Spin.Goal()
-            goal.target_yaw = tau
+            angle = command.get("spin_angle_rad")
+            goal.target_yaw = tau if angle is None else angle
             goal.time_allowance.sec = 30
             self.pending_goal = self.spin.send_goal_async(goal)
         elif kind == "RESET_DEMO":

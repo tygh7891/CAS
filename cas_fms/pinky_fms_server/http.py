@@ -57,6 +57,7 @@ def _observation(data: dict[str, Any], session_id: str) -> Observation:
         raise ValueError("Invalid worker readiness")
     command_id = data.get("command_id")
     result = data.get("result")
+    reservation_id = data.get("reservation_id")
     if (command_id is None) != (result is None):
         raise ValueError("Command ID and result must be provided together")
     return Observation(
@@ -69,6 +70,7 @@ def _observation(data: dict[str, Any], session_id: str) -> Observation:
         Result(result) if result is not None else None,
         ready,
         detail,
+        _text(reservation_id) if reservation_id is not None else None,
     )
 
 

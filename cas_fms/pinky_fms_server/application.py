@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from math import pi, remainder
 from threading import Lock
 from time import monotonic
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from fms_geometry import Pose
+from fms_geometry import CROSSING_STOP_MARGIN_M, Pose
 from fms_settings import DEMO_TITLES, DemoPreset
 from pinky_fms_server.domain import (
     Command,
@@ -28,6 +28,11 @@ WAYPOINT_TOLERANCE_M = 0.02
 RESET_YAW_TOLERANCE_RAD = 0.1
 DEMO_DROPOUT_S = 5.0
 BATTERY_STALE_S = 15.0
+APPROACH_LOOKAHEAD_M = 0.26
+WAITING_DISTANCE_M = 0.12
+ROUND_TRIP_POSITION_TOLERANCE_M = 0.04
+ROUND_TRIP_YAW_TOLERANCE_RAD = 0.12
+MAX_FINAL_YAW_CORRECTION_RAD = 0.30
 
 
 class Conflict(RuntimeError):
@@ -45,6 +50,7 @@ class Observation:
     result: Result | None
     ready: bool = True
     detail: str = ""
+    reservation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -151,11 +157,22 @@ class FleetService:
             return run_id
 
     def _start_tasks(self) -> None:
-        self._event("depart", "두 로봇이 출발점에서 대기점으로 이동")
         self.tasks = {}
+        round_trip = self._preset is DemoPreset.NORMAL
+        self._event(
+            "depart",
+            "두 로봇이 교차로로 접근"
+            if round_trip
+            else "두 로봇이 출발점에서 대기점으로 이동",
+        )
         for robot_id, route in self.scenario.routes.items():
-            task = Task(f"{self.run_id}:{robot_id}", phase=Phase.TO_WAIT)
-            task.issue(CommandKind.NAVIGATE, route.wait)
+            task = Task(f"{self.run_id}:{robot_id}")
+            if round_trip:
+                task.phase = Phase.APPROACH_ZONE
+                task.issue(CommandKind.TRAVERSE, route.goal)
+            else:
+                task.phase = Phase.TO_WAIT
+                task.issue(CommandKind.NAVIGATE, route.wait)
             self.tasks[robot_id] = task
 
     def _finish_demo_reset(self, now: float) -> None:
@@ -387,13 +404,17 @@ class FleetService:
             task.command = None
             self._event("canceled", f"{self._name(robot_id)}의 취소와 정지 확인")
             return
-        if task.phase == Phase.CROSSING and command.reservation_id:
+        if (
+            task.phase == Phase.CROSSING
+            and command.kind != CommandKind.TRAVERSE
+            and command.reservation_id
+        ):
             self.zone.observe(command.reservation_id, observation.pose)
         if observation.result == Result.FAILED:
-            task.state = TaskState.FAILED
-            task.error_code = "WORKER_FAILED"
-            task.command = None
-            self._event("failed", f"{self._name(robot_id)} 작업 실패")
+            self._fail_task(robot_id, task, "WORKER_FAILED")
+            return
+        if self._preset is DemoPreset.NORMAL:
+            self._advance_round_trip(robot_id, task, command, observation)
             return
         if observation.result != Result.SUCCEEDED or not observation.stopped:
             return
@@ -401,10 +422,7 @@ class FleetService:
             WAYPOINT_TOLERANCE_M
         ):
             if self.real_mode:
-                task.state = TaskState.FAILED
-                task.error_code = "WAYPOINT_NOT_REACHED"
-                task.command = None
-                self._event("failed", f"{self._name(robot_id)}의 목표 위치 불일치")
+                self._fail_task(robot_id, task, "WAYPOINT_NOT_REACHED")
             return
         match task.phase:
             case Phase.TO_WAIT:
@@ -430,14 +448,145 @@ class FleetService:
                     "spinning", f"{self._name(robot_id)} 목적지 도착 · 회전 시작"
                 )
             case Phase.SPINNING:
-                task.state = TaskState.SUCCEEDED
-                task.phase = None
-                task.command = None
-                self._event(
-                    "completed", f"{self._name(robot_id)} 회전 완료 · 정지 확인"
-                )
+                self._complete_task(robot_id, task, "회전 완료 · 정지 확인")
+
+    def _fail_task(self, robot_id: str, task: Task, error_code: str) -> None:
+        task.state = TaskState.FAILED
+        task.error_code = error_code
+        task.command = None
+        self._event("failed", f"{self._name(robot_id)} 작업 실패 ({error_code})")
+
+    def _complete_task(self, robot_id: str, task: Task, message: str) -> None:
+        task.state = TaskState.SUCCEEDED
+        task.phase = None
+        task.command = None
+        self._event("completed", f"{self._name(robot_id)} {message}")
+
+    def _entry_and_exit(self, robot_id: str, task: Task) -> tuple[Pose, Pose]:
+        route = self.scenario.routes[robot_id]
+        return (route.exit, route.wait) if task.returning else (route.wait, route.exit)
+
+    def _cleared_exit(self, robot_id: str, task: Task, pose: Pose) -> bool:
+        entry, exit_pose = self._entry_and_exit(robot_id, task)
+        dx, dy = exit_pose.x_m - entry.x_m, exit_pose.y_m - entry.y_m
+        progress = (pose.x_m - exit_pose.x_m) * dx + (pose.y_m - exit_pose.y_m) * dy
+        return progress >= 0 and not self.zone.bounds.overlaps(
+            pose, self.zone.radius_m + CROSSING_STOP_MARGIN_M
+        )
+
+    def _advance_round_trip(
+        self, robot_id: str, task: Task, command: Command, observation: Observation
+    ) -> None:
+        arrived = observation.result == Result.SUCCEEDED and observation.stopped
+        route = self.scenario.routes[robot_id]
+        if command.kind == CommandKind.TRAVERSE:
+            if not self._advance_traversal(
+                robot_id, task, command, observation, arrived
+            ):
+                return
+            if not arrived:
+                return
+            target = route.start.opposite_heading() if task.returning else route.goal
+            if not self._matches_pose(observation.pose, target):
+                self._fail_task(robot_id, task, "WAYPOINT_NOT_REACHED")
+                return
+            task.phase = Phase.TURN_AT_START if task.returning else Phase.SPINNING
+            task.issue(CommandKind.SPIN, spin_angle_rad=pi)
+            endpoint = "출발점" if task.returning else "목적지"
+            self._event(
+                "spinning", f"{self._name(robot_id)} {endpoint}에서 반 바퀴 회전"
+            )
+        elif arrived:
+            if task.returning:
+                self._finish_round_trip(robot_id, task, observation.pose, route.start)
+            elif (
+                observation.pose.distance_to(route.goal)
+                <= ROUND_TRIP_POSITION_TOLERANCE_M
+            ):
+                task.returning = True
+                task.phase = Phase.APPROACH_ZONE
+                task.issue(CommandKind.TRAVERSE, route.start.opposite_heading())
+                self._event("returning", f"{self._name(robot_id)} 출발점으로 복귀 시작")
+            else:
+                self._fail_task(robot_id, task, "WAYPOINT_NOT_REACHED")
+
+    def _finish_round_trip(
+        self, robot_id: str, task: Task, actual: Pose, start: Pose
+    ) -> None:
+        if self._matches_pose(actual, start):
+            self._complete_task(robot_id, task, "출발 위치와 방향 복원 · 정지")
+            return
+        yaw_error = remainder(start.yaw_rad - actual.yaw_rad, 2 * pi)
+        if (
+            not task.heading_corrected
+            and actual.distance_to(start) <= ROUND_TRIP_POSITION_TOLERANCE_M
+            and abs(yaw_error) <= MAX_FINAL_YAW_CORRECTION_RAD
+        ):
+            task.heading_corrected = True
+            task.issue(CommandKind.SPIN, spin_angle_rad=yaw_error)
+            self._event(
+                "heading_correction", f"{self._name(robot_id)} 출발 방향 미세 조정"
+            )
+        else:
+            self._fail_task(robot_id, task, "WAYPOINT_NOT_REACHED")
+
+    def _advance_traversal(
+        self,
+        robot_id: str,
+        task: Task,
+        command: Command,
+        observation: Observation,
+        arrived: bool,
+    ) -> bool:
+        reservation = self.zone.reservation
+        if reservation and reservation.robot_id == robot_id:
+            cleared = self._cleared_exit(robot_id, task, observation.pose)
+            if command.reservation_id:
+                if (
+                    observation.ready
+                    and observation.reservation_id == reservation.reservation_id
+                ):
+                    self.zone.observe(reservation.reservation_id, observation.pose)
+                    if reservation.entered and cleared:
+                        # Keep the same navigation goal until the worker acknowledges revocation.
+                        task.command = replace(command, reservation_id=None)
+                        task.phase = Phase.TO_START if task.returning else Phase.TO_GOAL
+                        return False
+                if arrived:
+                    self._fail_task(robot_id, task, "ZONE_NOT_TRAVERSED")
+                return False
+            if (
+                not observation.ready
+                or observation.reservation_id is not None
+                or not cleared
+                or not self.zone.release(reservation.reservation_id, observation.pose)
+            ):
+                return False
+            self._event("zone_released", f"{self._name(robot_id)}의 교차로 이탈 확인")
+
+        if task.phase in (Phase.TO_GOAL, Phase.TO_START):
+            return True
+        if arrived:
+            self._fail_task(robot_id, task, "ZONE_NOT_TRAVERSED")
+        elif task.phase == Phase.APPROACH_ZONE and observation.stopped:
+            entry, _ = self._entry_and_exit(robot_id, task)
+            if observation.pose.distance_to(entry) <= WAITING_DISTANCE_M:
+                task.phase = Phase.WAITING_ZONE
+                self._event("waiting", f"{self._name(robot_id)} 교차로 앞에서 대기")
+        return False
+
+    @staticmethod
+    def _matches_pose(actual: Pose, target: Pose) -> bool:
+        return (
+            actual.distance_to(target) <= ROUND_TRIP_POSITION_TOLERANCE_M
+            and abs(remainder(actual.yaw_rad - target.yaw_rad, 2 * pi))
+            <= ROUND_TRIP_YAW_TOLERANCE_RAD
+        )
 
     def _grant_next(self, now: float) -> None:
+        if self._preset is DemoPreset.NORMAL:
+            self._grant_round_trip(now)
+            return
         if self.zone.reservation or not self.zone.waiting:
             return
         if (
@@ -467,6 +616,42 @@ class FleetService:
             task.phase = Phase.CROSSING
             task.issue(CommandKind.NAVIGATE, route.exit, reservation.reservation_id)
             self._event("zone_granted", f"{self._name(robot_id)}에 교차로 진입권 부여")
+
+    def _grant_round_trip(self, now: float) -> None:
+        if self.zone.reservation or any(
+            not self._fresh(robot_id, now)
+            or not self.observations[robot_id].ready
+            or self.zone.overlaps(self.observations[robot_id].pose)
+            for robot_id in self.scenario.routes
+        ):
+            return
+        candidates = []
+        for robot_id, task in self.tasks.items():
+            observation = self.observations[robot_id]
+            if (
+                task.state == TaskState.RUNNING
+                and task.phase in (Phase.APPROACH_ZONE, Phase.WAITING_ZONE)
+                and task.command is not None
+                and observation.command_id == task.command.command_id
+                and observation.result == Result.RUNNING
+            ):
+                entry, _ = self._entry_and_exit(robot_id, task)
+                distance = observation.pose.distance_to(entry)
+                if distance <= APPROACH_LOOKAHEAD_M:
+                    candidates.append((distance, robot_id))
+        if not candidates:
+            return
+        _, robot_id = min(candidates)
+        self.zone.request(robot_id)
+        reservation = self.zone.grant()
+        task = self.tasks[robot_id]
+        assert reservation is not None and task.command is not None
+        task.phase = Phase.CROSSING
+        task.command = replace(task.command, reservation_id=reservation.reservation_id)
+        direction = "복귀" if task.returning else "가는 길"
+        self._event(
+            "zone_granted", f"{self._name(robot_id)}에 교차로 진입권 부여 · {direction}"
+        )
 
     def _fresh(self, robot_id: str, now: float) -> bool:
         observation = self.observations.get(robot_id)
@@ -513,12 +698,22 @@ class FleetService:
             now = self.clock()
             reservation = self.zone.reservation
             owner = reservation.robot_id if reservation else None
+            waiting = (
+                [
+                    robot_id
+                    for robot_id, task in self.tasks.items()
+                    if task.phase == Phase.WAITING_ZONE
+                    and task.state == TaskState.RUNNING
+                ]
+                if self._preset is DemoPreset.NORMAL
+                else list(self.zone.waiting)
+            )
             stale = any(
                 not self._fresh(robot_id, now) or not self.observations[robot_id].ready
                 for robot_id in self.scenario.routes
             )
             blocked = bool(owner and (stale or not self.tasks[owner].active)) or bool(
-                self.zone.waiting and stale
+                waiting and stale
             )
             hold_reason = ""
             if blocked:
@@ -544,7 +739,7 @@ class FleetService:
                 "zone_owner": owner,
                 "zone_blocked": blocked,
                 "zone_hold_reason": hold_reason,
-                "zone_waiting": list(self.zone.waiting),
+                "zone_waiting": waiting,
                 "location_pause_target": self._location_pause_target(now),
                 "paused_robot_id": self._paused_robot_id,
                 "robots": [
@@ -572,6 +767,7 @@ class FleetService:
             "detail": observation.detail if observation else "",
             "location_paused": self._paused_robot_id == robot_id,
             "pose": asdict(observation.pose) if observation else None,
+            "stopped": observation.stopped if observation else None,
             "pose_age_s": round(now - observation.observed_at_s, 2)
             if observation
             else None,

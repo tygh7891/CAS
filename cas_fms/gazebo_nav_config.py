@@ -13,17 +13,19 @@ def nav2_config(base: Path, start: Pose, output: Path) -> None:
     amcl = config["amcl"]["ros__parameters"]
     amcl.update(
         initial_pose={"x": start.x_m, "y": start.y_m, "z": 0.0, "yaw": start.yaw_rad},
-        update_min_d=0.015,
-        update_min_a=0.04,
+        update_min_d=0.02,
+        update_min_a=0.08,
         sigma_hit=0.035,
         laser_min_range=0.09,
-        alpha1=0.05,
-        alpha2=0.05,
-        alpha3=0.05,
-        alpha4=0.05,
+        alpha1=0.003,
+        alpha2=0.003,
+        alpha3=0.003,
+        alpha4=0.003,
     )
     controller = config["controller_server"]["ros__parameters"]
-    controller["general_goal_checker"].update(xy_goal_tolerance=0.012)
+    controller["general_goal_checker"].update(
+        xy_goal_tolerance=0.012, yaw_goal_tolerance=0.065
+    )
     controller["progress_checker"].update(required_movement_radius=0.035)
     controller["FollowPath"].update(
         desired_linear_vel=0.16,

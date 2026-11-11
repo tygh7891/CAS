@@ -24,10 +24,13 @@ from fms_settings import DEMO_TITLES, DemoPreset, Route, Scenario
 ROBOT_COLORS = {"robot_1": "#1479bd", "robot_2": "#9c3db6"}
 PHASES = {
     "TO_WAIT": "대기점 이동",
+    "APPROACH_ZONE": "교차로 접근",
     "WAITING_ZONE": "진입 대기",
     "CROSSING": "교차로 통과",
     "TO_GOAL": "목적지 이동",
     "SPINNING": "제자리 회전",
+    "TO_START": "출발점 복귀",
+    "TURN_AT_START": "출발 방향 복원",
 }
 STATES = {
     "IDLE": "준비",
@@ -38,7 +41,8 @@ STATES = {
     "CANCELED": "취소",
 }
 TASK_ERRORS = {
-    "WAYPOINT_NOT_REACHED": "Nav2가 완료를 보고했지만 목표 위치와 차이가 있습니다."
+    "WAYPOINT_NOT_REACHED": "Nav2 완료 보고 뒤 위치 또는 방향 오차를 확인했습니다.",
+    "ZONE_NOT_TRAVERSED": "교차로 진입과 이탈을 확인하지 못했습니다.",
 }
 
 
@@ -461,7 +465,11 @@ class FmsView(QMainWindow):
             task_states = {robot["task_state"] for robot in state["robots"]}
             result = "준비 완료"
             if task_states == {"SUCCEEDED"}:
-                result = "두 로봇 회전 완료"
+                result = (
+                    "두 로봇 출발점 복귀 완료"
+                    if preset == DemoPreset.NORMAL
+                    else "두 로봇 회전 완료"
+                )
             elif task_states == {"CANCELED"}:
                 result = "취소 및 정지 확인"
             if "FAILED" in task_states:

@@ -16,7 +16,7 @@ from gazebo_scene import WORLD_NAME, map_view_config, robot_description, world_f
 from local_demo import run_demo
 
 SIM_DOMAINS = {"robot_1": "114", "robot_2": "130"}
-GAZEBO_SCENARIO = Path(__file__).with_name("gazebo_scenario.yaml")
+GAZEBO_SCENARIO = Path(__file__).with_name("gazebo_round_trip_scenario.yaml")
 
 
 def run_gazebo(scenario_path: Path, port: int, headless: bool) -> int:

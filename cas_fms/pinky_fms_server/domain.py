@@ -8,10 +8,13 @@ from fms_geometry import Pose, ZoneBounds
 
 class Phase(StrEnum):
     TO_WAIT = "TO_WAIT"
+    APPROACH_ZONE = "APPROACH_ZONE"
     WAITING_ZONE = "WAITING_ZONE"
     CROSSING = "CROSSING"
     TO_GOAL = "TO_GOAL"
     SPINNING = "SPINNING"
+    TO_START = "TO_START"
+    TURN_AT_START = "TURN_AT_START"
 
 
 class TaskState(StrEnum):
@@ -25,6 +28,7 @@ class TaskState(StrEnum):
 
 class CommandKind(StrEnum):
     NAVIGATE = "NAVIGATE"
+    TRAVERSE = "TRAVERSE"
     SPIN = "SPIN"
     CANCEL = "CANCEL"
     RESET_DEMO = "RESET_DEMO"
@@ -44,6 +48,7 @@ class Command:
     kind: CommandKind
     target: Pose | None = None
     reservation_id: str | None = None
+    spin_angle_rad: float | None = None
 
 
 @dataclass
@@ -53,6 +58,8 @@ class Task:
     phase: Phase | None = None
     command: Command | None = None
     error_code: str | None = None
+    returning: bool = False
+    heading_corrected: bool = False
 
     @property
     def active(self) -> bool:
@@ -63,8 +70,12 @@ class Task:
         kind: CommandKind,
         target: Pose | None = None,
         reservation_id: str | None = None,
+        *,
+        spin_angle_rad: float | None = None,
     ) -> None:
-        self.command = Command(uuid4().hex, self.task_id, kind, target, reservation_id)
+        self.command = Command(
+            uuid4().hex, self.task_id, kind, target, reservation_id, spin_angle_rad
+        )
 
 
 @dataclass

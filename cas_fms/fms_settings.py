@@ -17,7 +17,7 @@ class DemoPreset(StrEnum):
 
 
 DEMO_TITLES = {
-    DemoPreset.NORMAL: "정상 순차 통과",
+    DemoPreset.NORMAL: "교차로 왕복",
     DemoPreset.DROPOUT: "위치 보고 중단·복구",
     DemoPreset.CANCEL: "교차로 내 작업 취소",
 }
