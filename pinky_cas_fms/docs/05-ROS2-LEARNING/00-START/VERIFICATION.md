@@ -26,6 +26,14 @@ python3 05-FMS/fleet_lab.py --robots 2 --pause-first-exit
 
 첫 명령은 원본이 있는 컴퓨터에서 실행한다. 다른 경로라면 `--root`로 세 강의 폴더의 상위 경로를 지정한다. Python·HTTP 예제의 관찰 기준은 각 실습에 있으며, Ubuntu에서 따라 할 실습은 [ROS 2](../02-ROS2/README.md), [Pinky](../03-PINKY/README.md), [SLAM·Nav2](../04-SLAM-NAV2/README.md)에 나눠 적었다.
 
-## 강의실에서 확인할 항목
+## Ubuntu 안내 보완 검증
 
-Mac 검증 환경에는 ROS 2 CLI가 없었다. 실제 ROS 2 노드 발견·DDS 도메인 격리·RViz·Gazebo·Nav2와 Pinky 센서 실측은 강의실에서 확인해야 한다. 관련 Python 예제는 구문 검사까지 수행했다. 실습 결과는 ‘받은 메시지’, ‘확인한 프레임’, ‘예상과 달랐던 동작’을 한 줄씩 기록하면 다시 복습할 때 사용할 수 있다.
+[강의실 Ubuntu 준비](UBUNTU.md)와 단계별 안내를 보완했다. Bash 명령 구문, 문서 링크, 저장소의 ROS 2 launch 파일을 대조했다. Mac에서 좌표 계산, Nav2 설정 사본 생성, FMS 모의 통행권과 HTTP 요청을 다시 실행했다.
+
+| 강의실에서 실행할 항목 | 확인할 결과 |
+|---|---|
+| [02 ROS 2](../02-ROS2/README.md) | 도메인 51에서 수신하고 52에서는 수신하지 않는다. 거북이 회전 액션에서 `SUCCEEDED`가 나온다. |
+| [03 TF와 Pinky 센서](../03-PINKY/README.md) | 정적 TF의 `Translation`이 약 `[1.0, 2.25, 0.0]`이다. 실물 Pinky를 사용할 때는 `/scan`과 `/odom`을 받는다. |
+| [04 Gazebo·SLAM·Nav2](../04-SLAM-NAV2/README.md) | 가상 라이다 메시지를 받고 지도 YAML·PGM을 저장한다. RViz에서 초기 위치를 입력하고 목표에 도달한다. |
+
+강의실 Ubuntu에서의 패키지 설치, ROS 2 노드 실행, Gazebo·Nav2 주행, 실물 Pinky 센서 수신은 현장 확인이 필요하다.

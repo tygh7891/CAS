@@ -11,11 +11,13 @@
 | Pinky 플랫폼·원격 연결·Bringup | [PINKY-01](../00-START/SOURCE-INDEX.md#pinky-01) 5·10번, [PINKY-02](../00-START/SOURCE-INDEX.md#pinky-02) 26·48번 |
 | 지도상 위치와 센서, LCD와 LED | [PINKY-04](../00-START/SOURCE-INDEX.md#pinky-04) 6·10·14번, [PINKY-06](../00-START/SOURCE-INDEX.md#pinky-06) 8·22·37·42번, [PINKY-07](../00-START/SOURCE-INDEX.md#pinky-07) 3·4·7·11번 |
 
-## A · Mac 또는 Ubuntu에서 좌표 계산
+## A · Ubuntu에서 좌표 계산
+
+새 터미널을 열 때마다 먼저 학습 폴더로 이동한다. [Ubuntu 실행 경로](../README.md#실행-경로)
 
 ```bash
-python3 03-PINKY/frame_math.py
-python3 03-PINKY/frame_math.py --yaw-deg 0
+/usr/bin/python3 03-PINKY/frame_math.py
+/usr/bin/python3 03-PINKY/frame_math.py --yaw-deg 0
 ```
 
 지도 기준 로봇 위치가 `(1, 2)`이고 센서가 로봇 기준 전방 0.25 m에 있다. 로봇이 +90° 돌아 있으면 센서는 지도 기준 `(1.00, 2.25)`, 0°이면 `(1.25, 2.00)`이다. [frame_math.py](frame_math.py)에서 **회전 → 이동** 순서를 찾아보고, `--yaw-deg -90`의 결과를 먼저 예상한다. `pose`는 위치와 방향을 같이 담는다.
@@ -44,26 +46,36 @@ ros2 run tf2_ros tf2_echo study_map study_sensor
 
 초기에 검색 중 메시지가 나올 수 있다. 연결 뒤 `Translation`이 약 `[1.0, 2.25, 0.0]`인지 확인한다. 순서를 `study_sensor study_map`으로 바꾸면 역변환을 조회한다. [Jazzy 정적 TF 명령](https://raw.githubusercontent.com/ros2/ros2_documentation/jazzy/source/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Static-Broadcaster-Py.rst)
 
-같은 도메인의 다른 터미널에서 `ros2 run rviz2 rviz2`를 실행한다. **Global Options → Fixed Frame**에 `study_map`을 넣고 **Add → TF**를 추가한다. 세 프레임 이름과 축을 확인하고 RViz를 닫은 뒤 각 터미널을 Ctrl+C로 종료한다.
+`Translation`이 나오지 않으면 터미널 1·2의 발행자가 켜져 있는지, 각 터미널이 도메인 `51`인지 확인한다. 터미널 4에서도 학습 폴더에 들어가 RViz를 실행한다.
+
+```bash
+# 터미널 4
+source 02-ROS2/lab_env.bash 51 && ros2 run rviz2 rviz2
+```
+
+**Global Options → Fixed Frame**에 `study_map`을 넣고 **Add → TF**를 추가한다. 세 프레임 이름과 축을 확인하고 RViz를 닫은 뒤 터미널 1~3을 Ctrl+C로 종료한다.
 
 ## C · Pinky가 준비된 경우 Ubuntu에서 읽기만 하기
 
 담당 Pinky의 Bringup을 확인한다. 새로 시작해야 한다면 로봇의 준비된 ROS 워크스페이스와 실제 도메인을 불러온 터미널에서 `ros2 launch pinky_bringup bringup_robot.launch.xml`을 실행한다. 원격 터미널이 필요하면 수업에서 확인한 계정과 호스트로 `ssh 계정@호스트`를 사용한다. [Pinky Bringup](../../../../pinky_bringup/launch/bringup_robot.launch.xml)
 
-노트북은 **새 터미널**을 열어 아래의 `14`를 담당 Pinky의 실제 값으로 바꾼다. B의 `LOCALHOST` 학습 셸은 같은 컴퓨터용이므로 여기서는 로봇과 통신 가능한 검색 설정을 사용한다.
+노트북과 Pinky가 강의실에서 사용하는 같은 ROS 2 네트워크에 연결돼 있는지 확인한다. 노트북의 **새 터미널**에서 학습 폴더로 들어간 뒤 아래의 예시 `14`를 담당 Pinky의 실제 도메인으로 바꿔 실행한다. 이 블록은 같은 서브넷에서 DDS로 검색하는 설정이다. 강의실에서 별도의 피어 설정을 제공했다면 그 설정을 사용한다. [Jazzy 검색 범위](https://raw.githubusercontent.com/ros2/ros2_documentation/jazzy/source/Tutorials/Advanced/Improved-Dynamic-Discovery.rst)
 
 ```bash
 source /opt/ros/jazzy/setup.bash
+unset ROS_LOCALHOST_ONLY
 export ROS_DOMAIN_ID=14
-printenv ROS_AUTOMATIC_DISCOVERY_RANGE
+export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+printenv ROS_DOMAIN_ID ROS_AUTOMATIC_DISCOVERY_RANGE
 ros2 topic list -t
 ros2 topic info /scan
-python3 03-PINKY/scan_report.py
-ros2 topic echo /odom --once
+/usr/bin/python3 03-PINKY/scan_report.py
+timeout 10s ros2 topic echo /odom nav_msgs/msg/Odometry --once \
+  --qos-reliability best_effort
 ros2 run tf2_ros tf2_echo odom base_footprint
 ```
 
-[scan_report.py](scan_report.py)는 유효 거리 개수와 센서 기준 최솟값만 출력하고 종료한다. `/scan`과 `/odom`의 이름이 다르면 `topic list -t`에서 실제 이름을 확인한다. `/scan`은 `--ros-args -r /scan:=/실제/토픽`으로 바꿔 읽을 수 있다. `tf2_echo`는 확인 뒤 Ctrl+C로 종료한다. `map → base_footprint` 조회는 SLAM 또는 위치 추정이 지도 기준 TF를 제공할 때 가능하다.
+`/scan` 발행자가 보이면 센서 프레임 이름과 유효 거리 개수, 최솟값이 출력되는지 확인한다. `/odom`에서는 `header.frame_id`와 `child_frame_id`를 보고, TF 출력에서 두 프레임 사이의 위치와 방향을 읽는다. 토픽 이름이 다르면 `topic list -t`에서 실제 이름을 확인한다. 센서 예제의 `/scan`은 `--ros-args -r /scan:=/실제/토픽`으로 바꿀 수 있다. `tf2_echo`는 확인 뒤 Ctrl+C로 종료한다. `map → base_footprint` 조회는 SLAM 또는 위치 추정이 지도 기준 TF를 제공할 때 가능하다. [센서 예제](scan_report.py)
 
 - **LiDAR**는 방향별 거리다. 가장 가까운 반사점이 로봇의 지도 위치를 뜻하지 않는다.
 - **Odometry**의 어근 `hodos`는 ‘길’이다. `/odom`은 주행에 따른 상대 위치 추정이며 움직임을 누적하면 오차가 쌓일 수 있다.
@@ -71,7 +83,7 @@ ros2 run tf2_ros tf2_echo odom base_footprint
 
 ### 확장 읽기
 
-[ROS2-19](../00-START/SOURCE-INDEX.md#ros2-19) 41·68번은 `Image → CvBridge → OpenCV`와 해상도 변경, [ROS2-20](../00-START/SOURCE-INDEX.md#ros2-20) 25·30번은 HSV 보정, [ROS2-21](../00-START/SOURCE-INDEX.md#ros2-21) 21·42번은 Canny 임계값과 입출력 토픽, [ROS2-22](../00-START/SOURCE-INDEX.md#ros2-22) 19·28번은 이전·현재 영상의 흐름을 다룬다. 이미지 토픽을 확인한 뒤 `ros2 run rqt_image_view rqt_image_view`의 토픽 선택 메뉴에서 원본과 처리 결과를 비교한다. 창을 닫아 종료한다.
+[ROS2-19](../00-START/SOURCE-INDEX.md#ros2-19) 41·68번은 `Image → CvBridge → OpenCV`와 해상도 변경, [ROS2-20](../00-START/SOURCE-INDEX.md#ros2-20) 25·30번은 HSV 보정, [ROS2-21](../00-START/SOURCE-INDEX.md#ros2-21) 21·42번은 Canny 임계값과 입출력 토픽, [ROS2-22](../00-START/SOURCE-INDEX.md#ros2-22) 19·28번은 이전·현재 영상의 흐름을 다룬다. 이미지 토픽을 확인한 뒤 `ros2 run rqt_image_view rqt_image_view`의 토픽 선택 메뉴에서 원본과 처리 결과를 비교한다. 실행 항목이 없으면 `sudo apt install ros-jazzy-rqt-image-view`로 설치한다. 창을 닫아 종료한다.
 
 PINKY-06 22·37번에서 LCD에 문자·GIF를 직접 그리는 예제를, PINKY-07 3·4·7·11번에서 LCD·LED를 ROS 서비스로 제어하는 예제를 비교한다. CAS의 인터페이스 패키지를 빌드한 환경이라면 장비 없이도 `ros2 interface show pinky_interfaces/srv/Emotion`으로 요청 필드 `emotion`을 확인할 수 있다.
 

@@ -2,7 +2,7 @@
 
 [학습 목차](../README.md) · [강의 출처표](../00-START/SOURCE-INDEX.md) · [용어](../00-START/GLOSSARY.md)
 
-**목표** · 작업 접수, 이동 명령, 교차로 예약, 실제 진입·이탈, 작업 완료를 각각 설명한다. Mac에서도 Python과 HTTP로 전체 흐름을 흉내 낸 뒤 CAS의 파일과 함수를 읽는다.
+**목표** · 작업 접수, 이동 명령, 교차로 예약, 실제 진입·이탈, 작업 완료를 각각 설명한다. Ubuntu 노트북에서 Python과 HTTP로 흐름을 재현한 뒤 CAS의 파일과 함수를 읽는다.
 
 | 필요한 이론 | HTML 원본에서 볼 슬라이드 |
 |---|---|
@@ -10,11 +10,13 @@
 | 토픽·서비스·액션·도메인 | [ROS2-05](../00-START/SOURCE-INDEX.md#ros2-05) 5·68번, [ROS2-10](../00-START/SOURCE-INDEX.md#ros2-10) 4·18번, [ROS2-12](../00-START/SOURCE-INDEX.md#ros2-12) 3·22번, [ROS2-13](../00-START/SOURCE-INDEX.md#ros2-13) 14·33번 |
 | 다중 로봇 관제, Nav2 결과와 HTTP | [PINKY-01](../00-START/SOURCE-INDEX.md#pinky-01) 10번, [NAV-06](../00-START/SOURCE-INDEX.md#nav-06) 9·13·17·40번, [PINKY-08](../00-START/SOURCE-INDEX.md#pinky-08) 4·7·10·11번 |
 
-## A · Mac 또는 Ubuntu에서 작업 단계 실습
+## A · Ubuntu에서 작업 단계 실습
+
+각 터미널을 학습 폴더에서 연다. A와 B에는 Ubuntu의 시스템 Python과 `curl`을 사용한다. [기본 패키지 설치](../00-START/UBUNTU.md#2-기본-실습-패키지-설치) · [실행 경로](../README.md#실행-경로)
 
 ```bash
-python3 05-FMS/fleet_lab.py --robots 1
-python3 05-FMS/fleet_lab.py --robots 2 --pause-first-exit
+/usr/bin/python3 05-FMS/fleet_lab.py --robots 1
+/usr/bin/python3 05-FMS/fleet_lab.py --robots 2 --pause-first-exit
 ```
 
 한 대 로그에서는 `GRANT → ENTER → RELEASE → SPIN → RETURN → COMPLETED`의 흐름을 찾는다. 복귀 때에도 `GRANT`와 `RELEASE`가 한 번 더 있다. 두 대 로그에서는 아래 순서를 찾아본다.
@@ -39,8 +41,8 @@ GRANT robot_2 OUTBOUND
 PINKY-08에서는 Flask 카메라 서버로 HTTP 클라이언트와 서버를 연결한다. 아래는 표준 라이브러리로 같은 요청·응답 개념을 연습하는 코드다. 서버가 이미지 대신 작업 상태 JSON을 돌려준다.
 
 ```bash
-# Mac 또는 Ubuntu 터미널 1
-python3 05-FMS/http_lab.py
+# Ubuntu 터미널 1
+/usr/bin/python3 05-FMS/http_lab.py
 ```
 
 ```bash
@@ -49,10 +51,18 @@ curl -fsS http://127.0.0.1:8766/api/state
 curl -i -H 'Content-Type: application/json' \
   -d '{"robot_id":"robot_1","spin_count":1}' \
   http://127.0.0.1:8766/api/jobs
-curl -fsS http://127.0.0.1:8766/api/state | python3 -m json.tool
+curl -fsS http://127.0.0.1:8766/api/state | /usr/bin/python3 -m json.tool
 ```
 
-처음에는 `pending: []`이다. 두 번째 응답의 HTTP 상태는 **202**, 본문은 **QUEUED**다. 마지막 조회에는 작업 하나가 보인다. `curl -d`는 본문을 보내므로 여기서는 POST 요청이 된다. `spin_count`에 -1을 넣으면 HTTP 400이 표시된다. [http_lab.py](http_lab.py)의 `do_POST()`에서 입력을 검증하고 큐에 넣는 부분을 찾아본 뒤 터미널 1을 Ctrl+C로 종료한다.
+터미널 1에 `Study HTTP: http://127.0.0.1:8766`가 뜬 다음 요청을 보낸다. 처음에는 `pending: []`이다. 두 번째 응답의 HTTP 상태는 **202**, 본문은 **QUEUED**다. 마지막 조회에는 작업 하나가 보인다. `curl -d`는 본문을 보내므로 여기서는 POST 요청이 된다. 다음 요청은 HTTP 400이어야 한다.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' \
+  -d '{"robot_id":"robot_1","spin_count":-1}' \
+  http://127.0.0.1:8766/api/jobs
+```
+
+`do_POST()`에서 입력을 검증하고 큐에 넣는 부분을 찾아본 뒤 터미널 1을 Ctrl+C로 종료한다. [HTTP 실습 서버](http_lab.py)
 
 ## C · 실제 CAS 파일과 함수 따라가기
 

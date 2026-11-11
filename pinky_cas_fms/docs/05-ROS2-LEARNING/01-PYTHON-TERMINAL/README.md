@@ -8,18 +8,20 @@
 
 출처표의 **[ROS2-01](../00-START/SOURCE-INDEX.md#ros2-01) 25·30·35·43번**에서 Bash 시작 파일, 별칭, ROS 환경을 불러오는 명령을 본다. Python·JSON 부분은 뒤에서 FMS의 상태 응답을 읽기 위해 추가한 입문 실습이다. ROS 설치가 필요한 경우에는 ROS2-01의 설치 부분과 [Jazzy Ubuntu 설치 문서](https://raw.githubusercontent.com/ros2/ros2_documentation/jazzy/source/Installation/Ubuntu-Install-Debs.rst)를 함께 본다.
 
-## Mac 또는 Ubuntu · 터미널 하나
+## Ubuntu · 터미널 하나
 
-[학습 폴더](../README.md#실행-경로)에서 아래 명령을 실행한다.
+Ubuntu의 시스템 Python을 사용한다. 먼저 노트북을 준비하고 학습 폴더로 이동한다. [Ubuntu 준비](../00-START/UBUNTU.md) · [실행 경로](../README.md#실행-경로)
 
 ```bash
 pwd
 ls 01-PYTHON-TERMINAL
-python3 01-PYTHON-TERMINAL/pose_report.py --help
-python3 01-PYTHON-TERMINAL/pose_report.py --x 3 --y 4 --yaw-deg 90
+/usr/bin/python3 01-PYTHON-TERMINAL/pose_report.py --help
+/usr/bin/python3 01-PYTHON-TERMINAL/pose_report.py --x 3 --y 4 --yaw-deg 90
 ```
 
 예상 출력에서 `pose.x_m`은 `3.0`, `pose.y_m`은 `4.0`, `yaw_rad`는 약 `1.5708`, 원점까지의 거리는 `5.0`이다. 프로그램은 한 줄을 출력하고 종료한다.
+
+`can't open file`이 표시되면 `pwd`와 `ls 01-PYTHON-TERMINAL`로 현재 폴더에 `pose_report.py`가 있는지 확인한다.
 
 `pwd`는 현재 작업 폴더를 알려준다. `python3`가 [pose_report.py](pose_report.py)를 읽으면 `main()`이 인수를 숫자로 바꿔 `make_report()`에 전달한다. 함수가 딕셔너리를 돌려주면 `json.dumps()`가 텍스트로 만든다. 서버의 위치 응답도 필드 이름과 단위를 보고 같은 방식으로 읽을 수 있다.
 
