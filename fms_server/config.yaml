@@ -1,0 +1,42 @@
+# IMPORTANT: Fill in every null coordinate from your verified Nav2 map before real motion.
+# Coordinate system: map frame; metres for x/y, radians for yaw.
+# Outer start/goal: 4 points. Inner wait_a/wait_b: 4 points.
+# These are NOT copied from older prototype branches.
+server:
+  host: 0.0.0.0       # Wi-Fi/LAN clients permitted; never use 0.0.0.0 as client URL
+  port: 8765
+  # Select 1 or 2 robots here. Only selected robots need running Workers.
+  # Examples: [robot_1], [robot_2], [robot_1, robot_2]
+  # Inactive robot coordinates may be left null.
+  active_robots: [robot_1]
+  next_job_delay_s: 3.0
+  # Worker reports at 10 Hz; this tolerates brief Wi-Fi/HTTP jitter while
+  # stopping new FMS commands when telemetry is genuinely stale.
+  telemetry_timeout_s: 2.0
+  # FMS-only XY confirmation at P/H points. It is deliberately a little
+  # larger than the Nav2 goal tolerance to tolerate AMCL/TF reporting jitter.
+  start_tolerance_m: 0.08
+zone:
+  # Axis-aligned rectangle covering the X intersection, in map coordinates
+  x_min: -0.950
+  x_max: -0.850
+  y_min: -0.650
+  y_max: -0.550
+  # Clearance radius around robot centre; account for real robot footprint / localization uncertainty.
+  robot_clearance_radius_m: 0.100
+robots:
+  robot_1:
+    ros_domain_id: 14
+    # Start here and return here after each one-cycle job.
+    # Nominal P1/P4/H1/H4 values from pinky_/map/fleet_waypoints.yaml.
+    # Verify each lane-centre point in RViz before enabling real motion.
+    endpoint_a: {x: -0.250, y: -0.250, yaw: 0.0} # P1
+    endpoint_b: {x: -1.550, y: -0.950, yaw: 0.0} # P4
+    wait_a: {x: -0.724, y: -0.505, yaw: 0.0}     # H1, P1 -> P4
+    wait_b: {x: -1.076, y: -0.695, yaw: 0.0}     # H4, P4 -> P1
+  robot_2:
+    ros_domain_id: 30
+    endpoint_a: {x: null, y: null, yaw: null}
+    endpoint_b: {x: null, y: null, yaw: null}
+    wait_a: {x: null, y: null, yaw: null}
+    wait_b: {x: null, y: null, yaw: null}
