@@ -52,3 +52,8 @@ CATKIN_IGNORE
 
 __pycache__/
 .pytest_cache/
+.ruff_cache/
+.venv/
+
+# macOS Finder metadata
+.DS_Store
