@@ -1,3 +1,7 @@
+## CAS 실물 1차 시나리오
+
+이 브랜치의 독립 관제 코드는 [cas/real](cas/real/README.md)에 있습니다. 실물 검증 상태와 다음 작업은 [인계 문서](cas/real/HANDOFF.md)를 확인하세요.
+
 # Pinky Pro
 ROS2 packages for Pinky Pro
 
