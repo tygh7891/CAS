@@ -8,7 +8,7 @@ server:
   # Select 1 or 2 robots here. Only selected robots need running Workers.
   # Examples: [robot_1], [robot_2], [robot_1, robot_2]
   # Inactive robot coordinates may be left null.
-  active_robots: [robot_1]
+  active_robots: [robot_1, robot_2]
   next_job_delay_s: 3.0
   # Worker reports at 10 Hz; this tolerates brief Wi-Fi/HTTP jitter while
   # stopping new FMS commands when telemetry is genuinely stale.
@@ -36,7 +36,9 @@ robots:
     wait_b: {x: -1.076, y: -0.695, yaw: 0.0}     # H4, P4 -> P1
   robot_2:
     ros_domain_id: 30
-    endpoint_a: {x: null, y: null, yaw: null}
-    endpoint_b: {x: null, y: null, yaw: null}
-    wait_a: {x: null, y: null, yaw: null}
-    wait_b: {x: null, y: null, yaw: null}
+    # Nominal P2/P3/H2/H3 values from pinky_/map/fleet_waypoints.yaml.
+    # Verify each lane-centre point in RViz before enabling real motion.
+    endpoint_a: {x: -1.550, y: -0.250, yaw: 0.0} # P2
+    endpoint_b: {x: -0.250, y: -0.950, yaw: 0.0} # P3
+    wait_a: {x: -1.076, y: -0.505, yaw: 0.0}     # H2, P2 -> P3
+    wait_b: {x: -0.724, y: -0.695, yaw: 0.0}     # H3, P3 -> P2

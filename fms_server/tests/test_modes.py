@@ -66,8 +66,9 @@ def test_single_robot_reserves_and_releases_for_both_legs_without_other_worker(r
     move(p(0., 0.))
     assert fms.zone.owner == rid and fms.zone.entered
     move(end)
-    assert fms.zone.owner is None
+    assert fms.zone.owner == rid
     finish_action()
+    assert fms.zone.owner is None
     assert fms.robots[rid].command['kind'] == 'SPIN'
     finish_action()
     assert fms.zone.owner == rid
@@ -75,8 +76,9 @@ def test_single_robot_reserves_and_releases_for_both_legs_without_other_worker(r
     move(p(0., 0.))
     assert fms.zone.owner == rid
     move(start)
-    assert fms.zone.owner is None
+    assert fms.zone.owner == rid
     finish_action()
+    assert fms.zone.owner is None
     assert fms.history[0]['status'] == 'COMPLETED'
     assert not fms.zone.waiting
 

@@ -18,13 +18,14 @@ class ZoneManager:
         self.reservation_id: str | None = None
         self.entered = False
         self.waiting: deque[str] = deque()
+        self.occupants: set[str] = set()
         self.blocked: str | None = None
 
     def overlaps(self, pose: Point) -> bool:
         return self.settings.overlap(pose)
 
     def available(self) -> bool:
-        return self.owner is None and not self.waiting and not self.blocked
+        return self.owner is None and not self.waiting and not self.occupants and not self.blocked
 
     def request(self, robot_id: str) -> bool:
         if self.owner == robot_id or robot_id in self.waiting:
@@ -33,8 +34,8 @@ class ZoneManager:
         return True
 
     def grant(self, robot_id: str) -> str:
-        if self.owner is not None or self.blocked:
-            raise RuntimeError('Shared zone is reserved or blocked')
+        if self.owner is not None or self.occupants or self.blocked:
+            raise RuntimeError('Shared zone is reserved or occupied')
         if self.waiting:
             if self.waiting[0] != robot_id:
                 raise RuntimeError('Cannot bypass FIFO reservation queue')
@@ -45,11 +46,16 @@ class ZoneManager:
         return self.reservation_id
 
     def observe(self, robot_id: str, pose: Point, *, exited_on_destination_side: bool) -> str | None:
-        """Return 'RELEASED'/'BLOCKED'/None. Requires actual entry before exit release."""
+        """Track observed occupancy; release only after an entered owner reaches its goal."""
         inside = self.overlaps(pose)
-        if inside and self.owner != robot_id:
+        was_inside = robot_id in self.occupants
+        if inside:
+            self.occupants.add(robot_id)
+        else:
+            self.occupants.discard(robot_id)
+        if inside and self.owner not in (None, robot_id):
             if not self.blocked:
-                self.blocked = f'Unreserved zone occupancy by {robot_id}. No new goals.'
+                self.blocked = f'{robot_id} entered a zone reserved by {self.owner}'
                 return 'BLOCKED'
             return None
         if self.owner == robot_id:
@@ -60,6 +66,11 @@ class ZoneManager:
                 self.reservation_id = None
                 self.entered = False
                 return 'RELEASED'
+        if self.owner is None:
+            if inside and not was_inside:
+                return 'OCCUPIED'
+            if not inside and was_inside:
+                return 'CLEARED'
         return None
 
     def block(self, reason: str) -> None:
@@ -68,5 +79,6 @@ class ZoneManager:
 
     def snapshot(self) -> dict:
         return {'owner': self.owner, 'entered': self.entered,
-                'waiting': list(self.waiting), 'blocked': self.blocked,
+                'waiting': list(self.waiting), 'occupants': sorted(self.occupants),
+                'blocked': self.blocked,
                 'bounds': list(self.settings.zone), 'clearance_m': self.settings.clearance}

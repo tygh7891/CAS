@@ -101,24 +101,27 @@ def test_two_robot_competing_jobs_complete_without_preemption():
     run.succeed('robot_2')
     r1_outbound_command = run.current('robot_1')['command_id']
     run.cross('robot_1', p(1, 1))
-    assert run.fms.zone.owner == 'robot_2'
+    assert run.fms.zone.owner == 'robot_1'
     assert run.current('robot_1')['command_id'] == r1_outbound_command
     run.succeed('robot_1')  # R1's 0 spins => directly request return leg
+    assert run.fms.zone.owner == 'robot_2'
     assert run.current('robot_1')['target'] == p(.5, .5)
     run.move('robot_1', .5, .5)
     run.succeed('robot_1')
     # R2 crosses and is now free to work while R1 goes home.
     run.cross('robot_2', p(1, -1))
-    assert run.fms.zone.owner == 'robot_1'
+    assert run.fms.zone.owner == 'robot_2'
     run.succeed('robot_2')
+    assert run.fms.zone.owner == 'robot_1'
     assert run.current('robot_2')['kind'] == 'SPIN'
     run.succeed('robot_2')
     assert run.current('robot_2')['target'] == p(.5, -.5)
     run.move('robot_2', .5, -.5)
     run.succeed('robot_2')
     run.cross('robot_1', p(-1, -1))
-    assert run.fms.zone.owner == 'robot_2'
+    assert run.fms.zone.owner == 'robot_1'
     run.succeed('robot_1')
+    assert run.fms.zone.owner == 'robot_2'
     run.cross('robot_2', p(-1, 1))
     run.succeed('robot_2')
     assert len(run.fms.history) == 2

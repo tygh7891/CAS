@@ -64,10 +64,11 @@ class Run:
         self.move(rid,0.,0.)
         assert self.fms.zone_owner == rid
         self.move(rid,end['x'],end['y'])
-        assert self.fms.zone_owner != rid
+        assert self.fms.zone_owner == rid  # Held until the Nav2 leg succeeds.
+        assert self.fms.blocked is None
 
 
-def test_zone_grant_direct_and_wait_then_transfer_before_navigation_result():
+def test_zone_grant_direct_and_wait_then_transfer_after_navigation_result():
     t=Run()
     t.fms.enqueue('robot_1',2)
     assert t.fms.zone_owner == 'robot_1'
@@ -80,8 +81,13 @@ def test_zone_grant_direct_and_wait_then_transfer_before_navigation_result():
     assert t.fms.status()['robots']['robot_2']['phase'] == 'WAITING_ZONE'
     assert t.fms.zone_owner == 'robot_1'
     t.cross('robot_1',p(1.,1.))
-    # Robot 1 has not completed its Nav2 goal, yet ownership transfers to 2.
+    # A temporary exit and re-entry must not turn the reservation into a block.
+    t.move('robot_1',0.,0.)
+    assert t.fms.zone_owner == 'robot_1'
+    assert t.fms.blocked is None
+    t.move('robot_1',1.,1.)
     assert t.current('robot_1')['kind'] == 'NAVIGATE'
+    t.succeed('robot_1')
     assert t.fms.zone_owner == 'robot_2'
     assert t.current('robot_2')['target'] == p(1.,-1.)
     assert not t.fms.zone_queue
@@ -120,10 +126,11 @@ def test_waiting_ahead_prevents_reacquisition_even_if_free():
     t=Run()
     t.fms.enqueue('robot_1',0)
     t.fms.enqueue('robot_2',0)
-    # zone released but R2 is not at waiting point: it keeps queue priority.
+    # R2 is not at the waiting point, so it keeps queue priority after release.
     t.cross('robot_1',p(1.,1.))
-    assert t.fms.zone_owner is None
+    assert t.fms.zone_owner == 'robot_1'
     t.succeed('robot_1')
+    assert t.fms.zone_owner is None
     assert t.current('robot_1')['kind'] == 'NAVIGATE'
     assert t.current('robot_1')['target'] == p(.5,.5)
     assert list(t.fms.zone_queue)==['robot_2','robot_1']
@@ -148,12 +155,20 @@ def test_no_release_without_observed_zone_entry_and_no_auto_recovery():
     assert t.fms.jobs.active('robot_1') is None
 
 
-def test_unreserved_zone_entry_blocks_new_goals():
+def test_unreserved_zone_entry_sends_other_robot_to_wait_and_holds_crossing():
     t=Run()
     t.move('robot_2',0.,0.)
-    assert 'Unreserved' in t.fms.blocked
+    assert t.fms.blocked is None
+    assert t.fms.zone.snapshot()['occupants'] == ['robot_2']
     t.fms.enqueue('robot_1',1)
-    assert t.current('robot_1') is None
+    assert t.current('robot_1')['target'] == p(-.5,-.5)
+    t.move('robot_1',-.5,-.5)
+    t.succeed('robot_1')
+    assert t.fms.status()['robots']['robot_1']['phase'] == 'WAITING_ZONE'
+    assert t.fms.zone_owner is None
+    t.move('robot_2',-1.,1.)
+    assert t.fms.zone_owner == 'robot_1'
+    assert t.current('robot_1')['target'] == p(1.,1.)
 
 
 def test_stale_pose_prevents_start_and_second_robot_telemetry_required():

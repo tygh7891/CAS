@@ -128,13 +128,15 @@ class FMS:
 
     def _observe_zone(self, rid: str) -> None:
         r = self.robots[rid]
-        result = self.zone.observe(rid, r.pose,
-                                   exited_on_destination_side=self._exited_on_goal_side(rid))
+        # Keep the reservation for the whole Nav2 leg. A path may briefly leave
+        # the expanded zone and enter it again before reaching the destination.
+        result = self.zone.observe(rid, r.pose, exited_on_destination_side=False)
         if result == 'BLOCKED':
             self._event('ZONE_BLOCKED', self.blocked, rid)
-        elif result == 'RELEASED':
-            self._event('ZONE_RELEASED',
-                        'Footprint fully clear on destination side; Nav2 goal may continue', rid)
+        elif result == 'OCCUPIED':
+            self._event('ZONE_OCCUPIED', 'Crossing held until observed zone is clear', rid)
+        elif result == 'CLEARED':
+            self._event('ZONE_CLEARED', 'Observed zone occupancy ended', rid)
 
     def _grant_queued(self, t: float) -> None:
         if self.blocked or self.zone.owner is not None or not self.zone.waiting:
@@ -169,6 +171,12 @@ class FMS:
         route = self.s.routes[rid]
         r = self.robots[rid]
         if cmd['kind'] == 'NAVIGATE':
+            if job.phase != 'TO_WAIT' and self.zone.owner == rid:
+                released = self.zone.observe(
+                    rid, r.pose, exited_on_destination_side=self._exited_on_goal_side(rid))
+                if released == 'RELEASED':
+                    self._event('ZONE_RELEASED',
+                                'Nav2 destination reached; footprint clear on destination side', rid)
             if job.phase == 'TO_WAIT':
                 wait = route.wait_a if job.leg == 'outbound' else route.wait_b
                 if r.pose is None or not r.pose.near(wait, self.s.home_tolerance):
